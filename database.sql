@@ -111,40 +111,10 @@ INSERT INTO products (name, name_tamil, group_id) VALUES
 ('EARRINGS', 'காதணிகள்', 1);
 
 -- Insert sample customers
-INSERT INTO customers (customer_no, name, mobile, address) VALUES 
-('C0001', 'siva', '9025148309', 'VNR, Tamil Nadu'),
-('C0002', 'Anantha babu', '8489020465', 'Sivakasi, Tamil Nadu'),
-('C0003', 'Mani', '9876543210', 'Chennai, Tamil Nadu'),
-('C0004', 'Priya', '8765432109', 'Madurai, Tamil Nadu');
 
 -- Insert sample loans
-INSERT INTO loans (loan_no, customer_id, loan_date, principal_amount, interest_rate, total_weight, net_weight, pledge_items, status) VALUES 
-('A0001', 1, '2025-07-04', 5000.00, 1.50, 17.000, 15.000, 'BABY RING - 1, STUD W/JIMMIKI - 1', 'active'),
-('A0002', 2, '2025-07-05', 25000.00, 1.58, 4.100, 4.000, 'STUD - 2', 'closed'),
-('A0003', 3, '2025-07-06', 15000.00, 1.75, 8.500, 8.000, 'CHAIN - 1', 'active'),
-('A0004', 4, '2025-07-07', 30000.00, 1.60, 12.000, 11.500, 'BANGLE - 2, RING - 1', 'active');
 
--- Insert sample interest records
-INSERT INTO interest (loan_id, interest_date, interest_amount) VALUES 
-(1, '2025-07-19', 75.00),
-(2, '2025-07-20', 395.00),
-(3, '2025-07-21', 262.50),
-(4, '2025-07-22', 480.00);
 
--- Insert sample loan closing
-INSERT INTO loan_closings (loan_id, closing_date, total_interest_paid) VALUES 
-(2, '2025-07-17', 395.00);
-
--- Insert sample transactions
-INSERT INTO transactions (date, transaction_name, transaction_type, amount, description) VALUES 
-('2025-07-04', 'SIVA', 'credit', 200000.00, 'Initial capital'),
-('2025-07-04', 'MANI SALARY', 'debit', 10000.00, 'Salary payment'),
-('2025-07-05', 'LOAN A0001', 'credit', 5000.00, 'Jewelry pawn loan'),
-('2025-07-05', 'LOAN A0002', 'credit', 25000.00, 'Jewelry pawn loan'),
-('2025-07-06', 'INTEREST A0001', 'credit', 75.00, 'Interest received'),
-('2025-07-07', 'UTILITIES', 'debit', 5000.00, 'Monthly utilities'),
-('2025-07-08', 'LOAN A0003', 'credit', 15000.00, 'Jewelry pawn loan'),
-('2025-07-09', 'LOAN A0004', 'credit', 30000.00, 'Jewelry pawn loan');
 
 -- Create indexes for better performance
 CREATE INDEX idx_customers_customer_no ON customers(customer_no);
@@ -227,48 +197,6 @@ LEFT JOIN groups g ON p.group_id = g.id
 LEFT JOIN loans l ON l.pledge_items LIKE CONCAT('%', p.name, '%')
 GROUP BY p.id, p.name, p.name_tamil, g.name;
 
--- Insert additional sample data for testing
-
--- More customers
-INSERT INTO customers (customer_no, name, mobile, address) VALUES 
-('C0005', 'Rajesh Kumar', '9876543211', 'Coimbatore, Tamil Nadu'),
-('C0006', 'Lakshmi Devi', '8765432108', 'Salem, Tamil Nadu'),
-('C0007', 'Arun Kumar', '7654321098', 'Erode, Tamil Nadu'),
-('C0008', 'Geetha Rani', '6543210987', 'Tirupur, Tamil Nadu');
-
--- More loans
-INSERT INTO loans (loan_no, customer_id, loan_date, principal_amount, interest_rate, total_weight, net_weight, pledge_items, status) VALUES 
-('A0005', 5, '2025-07-10', 18000.00, 1.65, 6.200, 6.000, 'NECKLACE - 1', 'active'),
-('A0006', 6, '2025-07-11', 12000.00, 1.70, 3.800, 3.600, 'EARRINGS - 2', 'active'),
-('A0007', 7, '2025-07-12', 35000.00, 1.55, 14.500, 14.000, 'CHAIN - 1, RING - 1', 'active'),
-('A0008', 8, '2025-07-13', 22000.00, 1.68, 7.300, 7.000, 'BANGLE - 1, STUD - 1', 'active');
-
--- More interest records
-INSERT INTO interest (loan_id, interest_date, interest_amount) VALUES 
-(5, '2025-07-25', 297.00),
-(6, '2025-07-26', 204.00),
-(7, '2025-07-27', 542.50),
-(8, '2025-07-28', 369.60);
-
--- More transactions
-INSERT INTO transactions (date, transaction_name, transaction_type, amount, description) VALUES 
-('2025-07-10', 'LOAN A0005', 'credit', 18000.00, 'Jewelry pawn loan'),
-('2025-07-11', 'LOAN A0006', 'credit', 12000.00, 'Jewelry pawn loan'),
-('2025-07-12', 'LOAN A0007', 'credit', 35000.00, 'Jewelry pawn loan'),
-('2025-07-13', 'LOAN A0008', 'credit', 22000.00, 'Jewelry pawn loan'),
-('2025-07-15', 'RENT EXPENSE', 'debit', 15000.00, 'Monthly rent'),
-('2025-07-16', 'INTEREST A0005', 'credit', 297.00, 'Interest received'),
-('2025-07-17', 'INTEREST A0006', 'credit', 204.00, 'Interest received'),
-('2025-07-18', 'INTEREST A0007', 'credit', 542.50, 'Interest received'),
-('2025-07-19', 'INTEREST A0008', 'credit', 369.60, 'Interest received');
-
--- Update loan status for some loans to closed
-UPDATE loans SET status = 'closed' WHERE loan_no IN ('A0003', 'A0005');
-
--- Insert loan closing for closed loans
-INSERT INTO loan_closings (loan_id, closing_date, total_interest_paid) VALUES 
-(3, '2025-07-30', 262.50),
-(5, '2025-07-31', 297.00);
 
 -- Create stored procedures for common operations
 

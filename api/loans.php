@@ -98,6 +98,38 @@ try {
         
         echo json_encode(['success' => true, 'message' => 'Loan deleted successfully']);
         
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get active loans for dropdown
+        $action = $_GET['action'] ?? '';
+        
+        if ($action === 'get_active_loans') {
+            try {
+                $stmt = $pdo->query("
+                    SELECT 
+                        l.id, 
+                        l.loan_no, 
+                        c.name AS customer_name, 
+                        l.principal_amount,
+                        COALESCE(i.total_interest_paid, 0) AS total_interest_paid
+                    FROM loans l
+                    JOIN customers c ON l.customer_id = c.id
+                    LEFT JOIN (
+                        SELECT loan_id, SUM(interest_amount) AS total_interest_paid
+                        FROM interest
+                        GROUP BY loan_id
+                    ) i ON i.loan_id = l.id
+                    WHERE l.status = 'active'
+                    ORDER BY l.loan_date DESC
+                ");
+                $activeLoans = $stmt->fetchAll();
+                
+                echo json_encode(['success' => true, 'loans' => $activeLoans]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid action']);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     }

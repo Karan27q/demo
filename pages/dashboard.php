@@ -16,11 +16,12 @@ try {
     $stmt = $pdo->query("SELECT COUNT(*) as recovery_count FROM loans WHERE status = 'closed'");
     $recoveryCount = $stmt->fetch()['recovery_count'];
     
-    // Get recent loan details
+    // Get recent loan details (only active)
     $stmt = $pdo->query("
         SELECT l.*, c.name as customer_name, c.mobile 
         FROM loans l 
         JOIN customers c ON l.customer_id = c.id 
+        WHERE l.status = 'active' 
         ORDER BY l.loan_date DESC 
         LIMIT 10
     ");
@@ -85,7 +86,6 @@ try {
                     <th>Loan Number</th>
                     <th>Customer Number</th>
                     <th>Customer Name</th>
-                    <th>Location</th>
                     <th>Mobile Number</th>
                     <th>Principal Amount</th>
                     <th>Interest Rate</th>
@@ -106,7 +106,6 @@ try {
                             <td><?php echo htmlspecialchars($loan['loan_no']); ?></td>
                             <td><?php echo htmlspecialchars($loan['customer_id']); ?></td>
                             <td><?php echo htmlspecialchars($loan['customer_name']); ?></td>
-                            <td>VNR</td>
                             <td><?php echo htmlspecialchars($loan['mobile']); ?></td>
                             <td>₹<?php echo number_format($loan['principal_amount']); ?></td>
                             <td><?php echo $loan['interest_rate']; ?>%</td>

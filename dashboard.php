@@ -52,6 +52,13 @@ if (!isset($_SESSION['user_id'])) {
                     <span>Loan</span>
                 </div>
                 
+                <div class="nav-item" data-page="closed-loans">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Closed Loans</span>
+                </div>
+                
+        
+                
                 <div class="nav-item has-submenu">
                     <i class="fas fa-money-bill-wave"></i>
                     <span>Interest | Closing</span>
@@ -60,6 +67,7 @@ if (!isset($_SESSION['user_id'])) {
                 <div class="sub-menu">
                     <div class="sub-item" data-page="interest">• Interest</div>
                     <div class="sub-item" data-page="loan-closing">• Loan Closing</div>
+                         
                 </div>
                 
                 <div class="nav-item" data-page="transactions">

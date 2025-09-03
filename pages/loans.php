@@ -12,13 +12,26 @@ try {
     $offset = ($page - 1) * $limit;
     
     $search = isset($_GET['search']) ? $_GET['search'] : '';
-    $whereClause = '';
-    $params = [];
+    $status = isset($_GET['status']) ? $_GET['status'] : 'active';
+    
+    if ($status === 'all') {
+        $whereClause = '';
+        $params = [];
+    } else {
+        $whereClause = "WHERE l.status = ?";
+        $params = [$status];
+    }
     
     if (!empty($search)) {
-        $whereClause = "WHERE l.loan_no LIKE ? OR c.name LIKE ? OR c.mobile LIKE ?";
-        $searchTerm = "%$search%";
-        $params = [$searchTerm, $searchTerm, $searchTerm];
+        if ($status === 'all') {
+            $whereClause = "WHERE (l.loan_no LIKE ? OR c.name LIKE ? OR c.mobile LIKE ?)";
+            $searchTerm = "%$search%";
+            $params = [$searchTerm, $searchTerm, $searchTerm];
+        } else {
+            $whereClause .= " AND (l.loan_no LIKE ? OR c.name LIKE ? OR c.mobile LIKE ?)";
+            $searchTerm = "%$search%";
+            $params = array_merge([$status], [$searchTerm, $searchTerm, $searchTerm]);
+        }
     }
     
     $stmt = $pdo->prepare("
@@ -60,6 +73,13 @@ try {
         <div class="search-box">
             <i class="fas fa-search"></i>
             <input type="text" placeholder="Jewelry pawn, mobile number" id="loanSearch" value="<?php echo htmlspecialchars($search); ?>">
+        </div>
+        <div class="filter-section" style="display: flex; gap: 10px; align-items: center;">
+            <select id="statusFilter" onchange="filterByStatus()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px;">
+                <option value="active" <?php echo $status === 'active' ? 'selected' : ''; ?>>Active Loans</option>
+                <option value="closed" <?php echo $status === 'closed' ? 'selected' : ''; ?>>Closed Loans</option>
+                <option value="all" <?php echo $status === 'all' ? 'selected' : ''; ?>>All Loans</option>
+            </select>
         </div>
         <button class="add-btn" onclick="showAddLoanModal()">Add New</button>
     </div>
@@ -243,11 +263,34 @@ function addLoan(event) {
 
 function changePage(page) {
     const search = document.getElementById('loanSearch').value;
+    const status = document.getElementById('statusFilter').value;
     const url = new URL(window.location);
     url.searchParams.set('page', page);
     if (search) {
         url.searchParams.set('search', search);
     }
+    if (status && status !== 'active') {
+        url.searchParams.set('status', status);
+    }
+    window.location.href = url.toString();
+}
+
+function filterByStatus() {
+    const status = document.getElementById('statusFilter').value;
+    const search = document.getElementById('loanSearch').value;
+    const url = new URL(window.location);
+    
+    if (status && status !== 'active') {
+        url.searchParams.set('status', status);
+    } else {
+        url.searchParams.delete('status');
+    }
+    
+    if (search) {
+        url.searchParams.set('search', search);
+    }
+    
+    url.searchParams.delete('page');
     window.location.href = url.toString();
 }
 
@@ -256,12 +299,19 @@ document.getElementById('loanSearch').addEventListener('input', function() {
     clearTimeout(this.searchTimeout);
     this.searchTimeout = setTimeout(() => {
         const search = this.value;
+        const status = document.getElementById('statusFilter').value;
         const url = new URL(window.location);
+        
         if (search) {
             url.searchParams.set('search', search);
         } else {
             url.searchParams.delete('search');
         }
+        
+        if (status && status !== 'active') {
+            url.searchParams.set('status', status);
+        }
+        
         url.searchParams.delete('page');
         window.location.href = url.toString();
     }, 500);
