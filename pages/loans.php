@@ -134,8 +134,11 @@ try {
                             <?php endif; ?>
                         </td>
                         <td>
-                            <button class="action-btn" onclick="showLoanActions(<?php echo $loan['id']; ?>)">
+                            <button class="action-btn" title="Actions" onclick="showLoanActions(<?php echo $loan['id']; ?>)">
                                 <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <button class="action-btn" title="Download PDF" onclick="openLoanPdf(<?php echo $loan['id']; ?>)">
+                                <i class="fas fa-file-pdf"></i>
                             </button>
                         </td>
                     </tr>
@@ -320,5 +323,11 @@ document.getElementById('loanSearch').addEventListener('input', function() {
 function showLoanActions(loanId) {
     // Implement loan actions dropdown
     console.log('Show actions for loan:', loanId);
+}
+
+function openLoanPdf(loanId) {
+    if (!loanId) return;
+    const url = `api/loan-pdf.php?loan_id=${loanId}`;
+    window.open(url, '_blank');
 }
 </script> 

@@ -127,6 +127,21 @@ try {
             } catch (PDOException $e) {
                 echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
             }
+        } elseif ($action === 'by_customer') {
+            // Return loans for a given customer id
+            $customerId = $_GET['customer_id'] ?? '';
+            if (empty($customerId)) {
+                echo json_encode(['success' => false, 'message' => 'customer_id is required']);
+                exit();
+            }
+            try {
+                $stmt = $pdo->prepare("SELECT id, loan_no, status, loan_date FROM loans WHERE customer_id = ? ORDER BY loan_date DESC");
+                $stmt->execute([$customerId]);
+                $rows = $stmt->fetchAll();
+                echo json_encode(['success' => true, 'loans' => $rows]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
         } else {
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
         }

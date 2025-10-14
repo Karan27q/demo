@@ -50,7 +50,7 @@ try {
             <button type="submit" class="btn-primary" id="closeBtn" disabled>Close Loan</button>
         </div>
     </form>
-</div>
+ </div>
 
 <script>
 (function(){

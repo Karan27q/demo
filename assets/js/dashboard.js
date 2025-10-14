@@ -14,15 +14,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const contentArea = document.getElementById('contentArea');
     
     navItems.forEach(item => {
-        item.addEventListener('click', function() {
-            const page = this.getAttribute('data-page');
-            if (page) {
-                loadPage(page);
-                
-                // Update active states
-                navItems.forEach(nav => nav.classList.remove('active'));
-                this.classList.add('active');
-            }
+        item.addEventListener('click', function(e) {
+            const raw = this.getAttribute('data-page');
+            if (!raw) return; // headers like has-submenu
+            const page = routePage(raw);
+            if (!page) return;
+            e.stopPropagation();
+            loadPage(page);
+            // Update active states
+            navItems.forEach(nav => nav.classList.remove('active'));
+            this.classList.add('active');
         });
     });
     
@@ -68,6 +69,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     if (page === 'loan-closing') {
                         initLoanClosingPage();
+                    } else if (page === 'reports') {
+                        initReportsPage();
                     }
                 } catch (e) {
                     console.error('Page init failed:', e);
@@ -82,6 +85,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `;
             });
+    }
+
+    // Expose globally so other scripts can navigate
+    window.loadPage = loadPage;
+
+    // Map sidebar entries to actual page filenames
+    function routePage(key) {
+        switch (key) {
+            case 'pledge-report':
+            case 'loan-report':
+            case 'customer-report':
+                return 'reports';
+            default:
+                return key; // dashboard, customers, loans, closed-loans, interest, loan-closing, transactions, reports
+        }
     }
     
     // Initialize tooltips and other UI elements
@@ -800,4 +818,145 @@ function initLoanClosingPage() {
     }
 
     updateCloseEnabled();
+}
+
+// Initialize reports page
+function initReportsPage() {
+    console.log('Initializing reports page...');
+    
+    // Load customers for PDF sections
+    loadPdfCustomers();
+    loadPledgeCustomers();
+}
+
+// Load PDF customers function
+async function loadPdfCustomers(){
+    try {
+        console.log('Loading PDF customers...');
+        const resp = await fetch('api/customers.php');
+        console.log('PDF Response status:', resp.status);
+        const data = await resp.json();
+        console.log('PDF Customers data:', data);
+        const select = document.getElementById('pdfCustomer');
+        const loanSelect = document.getElementById('pdfLoan');
+        
+        if (!select || !loanSelect) {
+            console.error('PDF Select elements not found:', { select, loanSelect });
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Select Customer</option>';
+        loanSelect.innerHTML = '<option value="">Select Loan</option>';
+        
+        if (data.success && Array.isArray(data.customers)) {
+            console.log('PDF Found customers:', data.customers.length);
+            data.customers.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.customer_no} - ${c.name}`;
+                select.appendChild(opt);
+            });
+        } else {
+            console.error('PDF No customers found or invalid response:', data);
+        }
+        select.addEventListener('change', async function(){
+            loanSelect.innerHTML = '<option value="">Select Loan</option>';
+            const cid = this.value;
+            if (!cid) return;
+            try {
+                const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
+                const d = await r.json();
+                if (d.success && Array.isArray(d.loans)) {
+                    d.loans.forEach(l => {
+                        const opt = document.createElement('option');
+                        opt.value = l.id;
+                        opt.setAttribute('data-loan-no', l.loan_no || '');
+                        const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
+                        opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
+                        loanSelect.appendChild(opt);
+                    });
+                }
+            } catch (e) { console.error(e); }
+        });
+    } catch (e) {
+        console.error('Failed to load customers', e);
+    }
+}
+
+// Load pledge customers function
+async function loadPledgeCustomers(){
+    try {
+        console.log('Loading pledge customers...');
+        const resp = await fetch('api/customers.php');
+        console.log('Response status:', resp.status);
+        const data = await resp.json();
+        console.log('Customers data:', data);
+        const select = document.getElementById('pledgeCustomer');
+        const loanSelect = document.getElementById('pledgeLoan');
+        
+        if (!select || !loanSelect) {
+            console.error('Select elements not found:', { select, loanSelect });
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Select Customer</option>';
+        loanSelect.innerHTML = '<option value="">Select Loan</option>';
+        
+        if (data.success && Array.isArray(data.customers)) {
+            console.log('Found customers:', data.customers.length);
+            data.customers.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.customer_no} - ${c.name}`;
+                select.appendChild(opt);
+            });
+        } else {
+            console.error('No customers found or invalid response:', data);
+        }
+        select.addEventListener('change', async function(){
+            loanSelect.innerHTML = '<option value="">Select Loan</option>';
+            const cid = this.value;
+            if (!cid) return;
+            try {
+                const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
+                const d = await r.json();
+                if (d.success && Array.isArray(d.loans)) {
+                    d.loans.forEach(l => {
+                        const opt = document.createElement('option');
+                        opt.value = l.id;
+                        opt.setAttribute('data-loan-no', l.loan_no || '');
+                        const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
+                        opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
+                        loanSelect.appendChild(opt);
+                    });
+                }
+            } catch (e) { console.error(e); }
+        });
+    } catch (e) {
+        console.error('Failed to load customers', e);
+    }
+}
+
+// View loan PDF function
+function viewLoanPdf(){
+    const loanId = document.getElementById('pdfLoan').value;
+    if (!loanId) { alert('Please select a loan'); return; }
+    // Submit to the existing FPDI-based template which expects POST
+    const loanSel = document.getElementById('pdfLoan');
+    const loanNo = loanSel.options[loanSel.selectedIndex]?.getAttribute('data-loan-no') || '';
+    const form = document.getElementById('fpdfLoanForm');
+    document.getElementById('fpdfLoanNo').value = loanNo;
+    form.submit();
+}
+
+// View pledge PDF function
+function viewPledgePdf(){
+    const loanId = document.getElementById('pledgeLoan').value;
+    if (!loanId) { alert('Please select a loan'); return; }
+    // Submit to the existing FPDI-based template which expects POST
+    const loanSel = document.getElementById('pledgeLoan');
+    const loanNo = loanSel.options[loanSel.selectedIndex]?.getAttribute('data-loan-no') || '';
+    const form = document.getElementById('fpdfLoanForm');
+    document.getElementById('fpdfLoanNo').value = loanNo;
+    form.submit();
 }

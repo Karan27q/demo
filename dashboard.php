@@ -81,10 +81,12 @@ if (!isset($_SESSION['user_id'])) {
                     <i class="fas fa-chevron-right arrow"></i>
                 </div>
                 <div class="sub-menu">
-                    <div class="sub-item" data-page="balancesheet">• Balance Sheet</div>
-                    <div class="sub-item" data-page="daybook">• Day Book</div>
-                    <div class="sub-item" data-page="advance-report">• Advance Report</div>
+                    <!--div class="sub-item" data-page="balancesheet">• Balance Sheet</div-->
+                    <!--div class="sub-item" data-page="daybook">• Day Book</div-->
+                    <!--div class="sub-item" data-page="advance-report">• Advance Report</div-->
                     <div class="sub-item" data-page="pledge-report">• Pledge Report</div>
+                    <div class="sub-item" data-page="loan-report">• Loan Report</div>
+                    <div class="sub-item" data-page="customer-report">• Customer Report</div>
                 </div>
             </nav>
         </div>
@@ -118,4 +120,4 @@ if (!isset($_SESSION['user_id'])) {
     
     <script src="assets/js/dashboard.js"></script>
 </body>
-</html> 
+</html>

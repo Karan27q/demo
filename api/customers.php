@@ -96,8 +96,8 @@ try {
         
         echo json_encode(['success' => true, 'message' => 'Customer deleted successfully']);
         
-    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_customers') {
-        // Get customers for dropdown
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get customers for dropdown (default action)
         $stmt = $pdo->query("SELECT id, customer_no, name FROM customers ORDER BY name");
         $customers = $stmt->fetchAll();
         echo json_encode(['success' => true, 'customers' => $customers]);
