@@ -7,7 +7,14 @@ require_once $basePath . '/config/database.php';
 try {
     $pdo = getDBConnection();
     
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get all groups
+        $stmt = $pdo->query("SELECT id, name FROM groups ORDER BY name");
+        $groups = $stmt->fetchAll();
+        
+        echo json_encode(['success' => true, 'groups' => $groups]);
+        
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Add new group
         $name = $_POST['name'] ?? '';
         

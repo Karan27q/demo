@@ -71,6 +71,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         initLoanClosingPage();
                     } else if (page === 'reports') {
                         initReportsPage();
+                    } else if (page === 'products') {
+                        initProductsPage();
+                    } else if (page === 'loans') {
+                        initLoansPage();
+                    } else if (page === 'interest') {
+                        initInterestPage();
                     }
                 } catch (e) {
                     console.error('Page init failed:', e);
@@ -93,9 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Map sidebar entries to actual page filenames
     function routePage(key) {
         switch (key) {
-            case 'pledge-report':
             case 'loan-report':
-            case 'customer-report':
                 return 'reports';
             default:
                 return key; // dashboard, customers, loans, closed-loans, interest, loan-closing, transactions, reports
@@ -417,6 +421,102 @@ function addGroup(event) {
         console.error('Error:', error);
         alert('An error occurred while adding the group.');
     });
+}
+
+// Loan-specific functions
+function showAddLoanModal() {
+    showModal('addLoanModal');
+    // Set default date to today
+    document.getElementById('loanDate').value = new Date().toISOString().split('T')[0];
+    // Reload customers when opening the modal
+    loadLoanCustomers();
+}
+
+function addLoan(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    
+    fetch('api/loans.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            hideModal('addLoanModal');
+            event.target.reset();
+            // Reload the page to show new loan
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while adding the loan.');
+    });
+}
+
+function showLoanActions(loanId) {
+    // Implement loan actions dropdown
+    console.log('Show actions for loan:', loanId);
+}
+
+function openLoanPdf(loanId) {
+    if (!loanId) return;
+    const url = `api/loan-pdf.php?loan_id=${loanId}`;
+    window.open(url, '_blank');
+}
+
+// Interest-specific functions
+function showAddInterestModal() {
+    showModal('addInterestModal');
+    // Set default date to today
+    document.getElementById('interestDate').value = new Date().toISOString().split('T')[0];
+    // Reload active loans when opening the modal
+    loadActiveLoans();
+}
+
+function addInterest(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    
+    fetch('api/interest.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            hideModal('addInterestModal');
+            event.target.reset();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while adding the interest record.');
+    });
+}
+
+function updateInterestLoanDetails() {
+    // This function can be used to update loan details when a loan is selected
+    const loanSelect = document.getElementById('loanId');
+    const selectedOption = loanSelect.options[loanSelect.selectedIndex];
+    
+    if (selectedOption.value) {
+        // You can add logic here to fetch and display loan details if needed
+        console.log('Selected loan:', selectedOption.text);
+    }
+}
+
+function showInterestActions(interestId) {
+    // Implement interest actions dropdown
+    console.log('Show actions for interest:', interestId);
 }
 
 // Transaction-specific functions
@@ -827,6 +927,207 @@ function initReportsPage() {
     // Load customers for PDF sections
     loadPdfCustomers();
     loadPledgeCustomers();
+}
+
+// Initialize products page
+function initProductsPage() {
+    console.log('Initializing products page...');
+    
+    // Load groups for dropdown
+    loadGroups();
+    
+    // Bind search functionality
+    const searchInput = document.getElementById('productSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                const search = this.value;
+                const url = new URL(window.location);
+                if (search) {
+                    url.searchParams.set('search', search);
+                } else {
+                    url.searchParams.delete('search');
+                }
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            }, 500);
+        });
+    }
+}
+
+// Initialize loans page
+function initLoansPage() {
+    console.log('Initializing loans page...');
+    
+    // Load customers for dropdown
+    loadLoanCustomers();
+    
+    // Bind search functionality
+    const searchInput = document.getElementById('loanSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                const search = this.value;
+                const status = document.getElementById('statusFilter').value;
+                const url = new URL(window.location);
+                
+                if (search) {
+                    url.searchParams.set('search', search);
+                } else {
+                    url.searchParams.delete('search');
+                }
+                
+                if (status && status !== 'active') {
+                    url.searchParams.set('status', status);
+                }
+                
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            }, 500);
+        });
+    }
+    
+    // Bind status filter functionality
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', function() {
+            const status = this.value;
+            const search = document.getElementById('loanSearch').value;
+            const url = new URL(window.location);
+            
+            if (status && status !== 'active') {
+                url.searchParams.set('status', status);
+            } else {
+                url.searchParams.delete('status');
+            }
+            
+            if (search) {
+                url.searchParams.set('search', search);
+            }
+            
+            url.searchParams.delete('page');
+            window.location.href = url.toString();
+        });
+    }
+}
+
+// Initialize interest page
+function initInterestPage() {
+    console.log('Initializing interest page...');
+    
+    // Load active loans for dropdown
+    loadActiveLoans();
+    
+    // Bind search functionality
+    const searchInput = document.getElementById('interestSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                const search = this.value;
+                const url = new URL(window.location);
+                if (search) {
+                    url.searchParams.set('search', search);
+                } else {
+                    url.searchParams.delete('search');
+                }
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            }, 500);
+        });
+    }
+}
+
+// Load groups function
+async function loadGroups() {
+    try {
+        console.log('Loading groups...');
+        const response = await fetch('api/groups.php');
+        const data = await response.json();
+        
+        if (data.success && data.groups) {
+            const groupSelect = document.getElementById('productGroup');
+            if (groupSelect) {
+                // Clear existing options except the first one
+                groupSelect.innerHTML = '<option value="">Select Group</option>';
+                
+                // Add groups to dropdown
+                data.groups.forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group.id;
+                    option.textContent = group.name;
+                    groupSelect.appendChild(option);
+                });
+                console.log('Groups loaded successfully:', data.groups.length);
+            }
+        } else {
+            console.error('Failed to load groups:', data.message);
+        }
+    } catch (error) {
+        console.error('Error loading groups:', error);
+    }
+}
+
+// Load loan customers function
+async function loadLoanCustomers() {
+    try {
+        console.log('Loading loan customers...');
+        const response = await fetch('api/customers.php');
+        const data = await response.json();
+        
+        if (data.success && data.customers) {
+            const customerSelect = document.getElementById('customerId');
+            if (customerSelect) {
+                // Clear existing options except the first one
+                customerSelect.innerHTML = '<option value="">Select Customer</option>';
+                
+                // Add customers to dropdown
+                data.customers.forEach(customer => {
+                    const option = document.createElement('option');
+                    option.value = customer.id;
+                    option.textContent = `${customer.customer_no} - ${customer.name}`;
+                    customerSelect.appendChild(option);
+                });
+                console.log('Customers loaded successfully:', data.customers.length);
+            }
+        } else {
+            console.error('Failed to load customers:', data.message);
+        }
+    } catch (error) {
+        console.error('Error loading customers:', error);
+    }
+}
+
+// Load active loans function for interest page
+async function loadActiveLoans() {
+    try {
+        console.log('Loading active loans for interest...');
+        const response = await fetch('api/loans.php?action=get_active_loans');
+        const data = await response.json();
+        
+        if (data.success && data.loans) {
+            const loanSelect = document.getElementById('loanId');
+            if (loanSelect) {
+                // Clear existing options except the first one
+                loanSelect.innerHTML = '<option value="">Select Loan</option>';
+                
+                // Add loans to dropdown
+                data.loans.forEach(loan => {
+                    const option = document.createElement('option');
+                    option.value = loan.id;
+                    option.textContent = `${loan.loan_no} - ${loan.customer_name}`;
+                    loanSelect.appendChild(option);
+                });
+                console.log('Active loans loaded successfully:', data.loans.length);
+            }
+        } else {
+            console.error('Failed to load active loans:', data.message);
+        }
+    } catch (error) {
+        console.error('Error loading active loans:', error);
+    }
 }
 
 // Load PDF customers function

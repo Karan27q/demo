@@ -50,32 +50,7 @@ try {
         <!-- Hidden form to POST to our PDF generator -->
         <form id="fpdfLoanForm" action="api/loan-pdf-generator.php" method="POST" target="_blank" style="display:none">
             <input type="hidden" name="loan_no" id="fpdfLoanNo">
-        </form>
-        
-        <!-- Pledge Report -->
-        <div class="report-card">
-            <div class="report-header">
-                <h3><i class="fas fa-shield-alt"></i> Pledge Report</h3>
-            </div>
-            <div class="report-filters">
-                <div class="filter-row">
-                    <div class="form-group">
-                        <label>Customer</label>
-                        <select id="pledgeCustomer"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>Loan</label>
-                        <select id="pledgeLoan"></select>
-                    </div>
-                </div>
-                <div class="filter-actions">
-                    <button class="btn-success" onclick="viewPledgePdf()">View PDF</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+        </form> 
 
 <style>
 .reports-grid {

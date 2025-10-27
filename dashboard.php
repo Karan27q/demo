@@ -84,9 +84,7 @@ if (!isset($_SESSION['user_id'])) {
                     <!--div class="sub-item" data-page="balancesheet">• Balance Sheet</div-->
                     <!--div class="sub-item" data-page="daybook">• Day Book</div-->
                     <!--div class="sub-item" data-page="advance-report">• Advance Report</div-->
-                    <div class="sub-item" data-page="pledge-report">• Pledge Report</div>
                     <div class="sub-item" data-page="loan-report">• Loan Report</div>
-                    <div class="sub-item" data-page="customer-report">• Customer Report</div>
                 </div>
             </nav>
         </div>
