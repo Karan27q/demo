@@ -41,7 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
             
-            header('Location: ../dashboard.php');
+            // Get redirect page from POST or GET, or use default dashboard
+            $redirectPage = $_POST['redirect'] ?? $_GET['redirect'] ?? '';
+            
+            // Build redirect URL
+            $redirectUrl = '../dashboard.php';
+            if (!empty($redirectPage)) {
+                $redirectUrl .= '?page=' . urlencode($redirectPage);
+            }
+            
+            header('Location: ' . $redirectUrl);
             exit();
         } else {
             // Debug: Log password mismatch

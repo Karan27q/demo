@@ -112,6 +112,11 @@ try {
                         l.principal_amount,
                         COALESCE(i.total_interest_paid, 0) AS total_interest_paid
                     FROM loans l
+                    INNER JOIN (
+                        SELECT loan_no, MAX(id) as max_id
+                        FROM loans
+                        GROUP BY loan_no
+                    ) as latest ON l.loan_no = latest.loan_no AND l.id = latest.max_id
                     JOIN customers c ON l.customer_id = c.id
                     LEFT JOIN (
                         SELECT loan_id, SUM(interest_amount) AS total_interest_paid
@@ -128,16 +133,35 @@ try {
                 echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
             }
         } elseif ($action === 'by_customer') {
-            // Return loans for a given customer id
+            // Return loans for a given customer id (deduplicated - only latest per loan_no)
             $customerId = $_GET['customer_id'] ?? '';
             if (empty($customerId)) {
                 echo json_encode(['success' => false, 'message' => 'customer_id is required']);
                 exit();
             }
             try {
-                $stmt = $pdo->prepare("SELECT id, loan_no, status, loan_date FROM loans WHERE customer_id = ? ORDER BY loan_date DESC");
+                // First get all loans for customer, then deduplicate in PHP to ensure uniqueness
+                $stmt = $pdo->prepare("
+                    SELECT l.id, l.loan_no, l.status, l.loan_date 
+                    FROM loans l
+                    WHERE l.customer_id = ? 
+                    ORDER BY l.loan_date DESC, l.id DESC
+                ");
                 $stmt->execute([$customerId]);
-                $rows = $stmt->fetchAll();
+                $allLoans = $stmt->fetchAll();
+                
+                // Deduplicate: keep only the latest (highest id) for each loan_no
+                $loanMap = [];
+                foreach ($allLoans as $loan) {
+                    $loanNo = trim($loan['loan_no']);
+                    if (!isset($loanMap[$loanNo]) || $loan['id'] > $loanMap[$loanNo]['id']) {
+                        $loanMap[$loanNo] = $loan;
+                    }
+                }
+                
+                // Convert back to array
+                $rows = array_values($loanMap);
+                
                 echo json_encode(['success' => true, 'loans' => $rows]);
             } catch (PDOException $e) {
                 echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);

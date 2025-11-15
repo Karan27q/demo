@@ -1,9 +1,14 @@
 <?php
 session_start();
 if (!isset($_SESSION['user_id'])) {
-    header('Location: index.php');
+    // Preserve the page parameter if present for redirect after login
+    $redirect = isset($_GET['page']) ? '?redirect=' . urlencode($_GET['page']) : '';
+    header('Location: index.php' . $redirect);
     exit();
 }
+
+// Get the page parameter from URL
+$pageParam = isset($_GET['page']) ? htmlspecialchars($_GET['page']) : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -32,42 +37,36 @@ if (!isset($_SESSION['user_id'])) {
                     <span>Dashboard</span>
                 </div>
                 
+                <div class="nav-item" data-page="user-access">
+                    <i class="fas fa-users-cog"></i>
+                    <span>User</span>
+                </div>
+                
                 <div class="nav-item has-submenu">
-                    <i class="fas fa-plus"></i>
+                    <i class="fas fa-cog"></i>
                     <span>Master</span>
                     <i class="fas fa-chevron-right arrow"></i>
                 </div>
                 <div class="sub-menu">
+                    <div class="sub-item" data-page="customers">• Customer</div>
                     <div class="sub-item" data-page="groups">• Group</div>
                     <div class="sub-item" data-page="products">• Products</div>
+                    <div class="sub-item" data-page="jewel-recovery">• Jewel Recovery</div>
                 </div>
-                
-                <div class="nav-item" data-page="customers">
-                    <i class="fas fa-user-friends"></i>
-                    <span>Customer</span>
-                </div>
-                
-                <div class="nav-item" data-page="loans">
-                    <i class="fas fa-coins"></i>
-                    <span>Loan</span>
-                </div>
-                
-                <div class="nav-item" data-page="closed-loans">
-                    <i class="fas fa-check-circle"></i>
-                    <span>Closed Loans</span>
-                </div>
-                
-        
                 
                 <div class="nav-item has-submenu">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Interest | Closing</span>
-                    <i class="fas fa-chevron-down arrow"></i>
+                    <i class="fas fa-gem"></i>
+                    <span>Pawn</span>
+                    <i class="fas fa-chevron-right arrow"></i>
                 </div>
                 <div class="sub-menu">
-                    <div class="sub-item" data-page="interest">• Interest</div>
-                    <div class="sub-item" data-page="loan-closing">• Loan Closing</div>
-                         
+                    <div class="sub-item" data-page="loans">• Jewelry Pawning</div>
+                    <div class="sub-item" data-page="bank-pledge">• Bank Pledge</div>
+                </div>
+                
+                <div class="nav-item" data-page="interest">
+                    <i class="fas fa-percent"></i>
+                    <span>Interest</span>
                 </div>
                 
                 <div class="nav-item" data-page="transactions">
@@ -75,16 +74,18 @@ if (!isset($_SESSION['user_id'])) {
                     <span>Transaction</span>
                 </div>
                 
+                <div class="nav-item" data-page="expense">
+                    <i class="fas fa-money-bill-wave"></i>
+                    <span>Expense</span>
+                </div>
+                
                 <div class="nav-item has-submenu">
                     <i class="fas fa-chart-bar"></i>
-                    <span>Reports</span>
+                    <span>Report</span>
                     <i class="fas fa-chevron-right arrow"></i>
                 </div>
                 <div class="sub-menu">
-                    <!--div class="sub-item" data-page="balancesheet">• Balance Sheet</div-->
-                    <!--div class="sub-item" data-page="daybook">• Day Book</div-->
-                    <!--div class="sub-item" data-page="advance-report">• Advance Report</div-->
-                    <div class="sub-item" data-page="loan-report">• Loan Report</div>
+                    <div class="sub-item" data-page="reports">• Balance Sheet</div>
                 </div>
             </nav>
         </div>
@@ -116,6 +117,12 @@ if (!isset($_SESSION['user_id'])) {
         </div>
     </div>
     
+    <?php if (!empty($pageParam)): ?>
+    <script>
+        // Pass the page parameter to JavaScript
+        window.initialPage = <?php echo json_encode($pageParam); ?>;
+    </script>
+    <?php endif; ?>
     <script src="assets/js/dashboard.js"></script>
 </body>
 </html>

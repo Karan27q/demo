@@ -8,11 +8,25 @@ try {
     $pdo = getDBConnection();
     
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        // Get all groups
-        $stmt = $pdo->query("SELECT id, name FROM groups ORDER BY name");
-        $groups = $stmt->fetchAll();
+        // Get single group by ID if id parameter is provided
+        $id = $_GET['id'] ?? '';
         
-        echo json_encode(['success' => true, 'groups' => $groups]);
+        if (!empty($id)) {
+            $stmt = $pdo->prepare("SELECT * FROM groups WHERE id = ?");
+            $stmt->execute([$id]);
+            $group = $stmt->fetch();
+            
+            if ($group) {
+                echo json_encode(['success' => true, 'group' => $group]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Group not found']);
+            }
+        } else {
+            // Get all groups
+            $stmt = $pdo->query("SELECT id, name FROM groups ORDER BY name");
+            $groups = $stmt->fetchAll();
+            echo json_encode(['success' => true, 'groups' => $groups]);
+        }
         
     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Add new group
