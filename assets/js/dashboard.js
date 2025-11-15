@@ -46,12 +46,56 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Load page content
-    function loadPage(page) {
-        const url = `pages/${page}.php`;
-        console.log('Loading page:', page, 'from URL:', url);
+    // Reverse map: convert page filename back to data-page attribute
+    function reverseRoutePage(page) {
+        switch (page) {
+            case 'reports':
+                return 'reports';
+            default:
+                return page; // dashboard, user-access, company, groups, products, customers, loans, bank-pledge, interest, loan-closing, transactions, expense, reports
+        }
+    }
+    
+    // Update browser URL without page reload
+    function updateURL(pageKey) {
+        const baseUrl = window.location.pathname;
+        const newUrl = pageKey === 'dashboard' 
+            ? baseUrl 
+            : `${baseUrl}?page=${encodeURIComponent(pageKey)}`;
         
-        fetch(url)
+        // Update URL without reloading page
+        window.history.pushState({ page: pageKey }, '', newUrl);
+    }
+    
+    // Load page content
+    function loadPage(page, updateUrl = true) {
+        // Build URL with query parameters from current window URL
+        // Pass through pagination (as 'p') and search parameters
+        const currentUrl = new URL(window.location);
+        
+        // Build the fetch URL - use relative path from current location
+        let fetchUrl = `pages/${page}.php`;
+        const params = new URLSearchParams();
+        
+        // Copy relevant query parameters from current URL to the page URL
+        // Use 'p' for pagination to avoid conflict with the main 'page' routing parameter
+        const pagenum = currentUrl.searchParams.get('p');
+        if (pagenum !== null) {
+            params.set('p', pagenum);
+        }
+        const search = currentUrl.searchParams.get('search');
+        if (search !== null) {
+            params.set('search', search);
+        }
+        
+        // Add query string if there are parameters
+        if (params.toString()) {
+            fetchUrl += '?' + params.toString();
+        }
+        
+        console.log('Loading page:', page, 'from URL:', fetchUrl);
+        
+        fetch(fetchUrl)
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Page not found');
@@ -64,6 +108,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Update page title
                 document.title = `Lakshmi Finance - ${page.charAt(0).toUpperCase() + page.slice(1)}`;
+                
+                // Update browser URL if requested
+                if (updateUrl) {
+                    const pageKey = reverseRoutePage(page);
+                    updateURL(pageKey);
+                }
 
                 // Page-specific initializers (scripts in fetched HTML won't execute)
                 try {
@@ -72,12 +122,63 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else if (page === 'reports') {
                         initReportsPage();
                     } else if (page === 'products') {
-                        initProductsPage();
+                        if (typeof initProductSearch === 'function') {
+                            initProductSearch();
+                        }
                     } else if (page === 'loans') {
-                        initLoansPage();
+                        if (typeof initLoansPage === 'function') {
+                            initLoansPage();
+                        }
                     } else if (page === 'interest') {
-                        initInterestPage();
+                        if (typeof initInterestPage === 'function') {
+                            initInterestPage();
+                        }
+                    } else if (page === 'customers') {
+                        if (typeof initCustomerSearch === 'function') {
+                            initCustomerSearch();
+                        }
+                    } else if (page === 'jewel-recovery') {
+                        if (typeof initJewelRecoveryPage === 'function') {
+                            initJewelRecoveryPage();
+                        }
+                    } else if (page === 'dashboard') {
+                        // Initialize dashboard when loaded dynamically
+                        // Only initialize chart, data is already loaded via PHP
+                        setTimeout(() => {
+                            if (typeof initDashboard === 'function') {
+                                // Only load chart data, not all stats (to avoid duplicate fetching)
+                                initDashboard();
+                            } else {
+                                // Execute inline scripts from the loaded HTML
+                                const scripts = contentArea.querySelectorAll('script');
+                                scripts.forEach(script => {
+                                    if (script.textContent && !script.dataset.executed) {
+                                        script.dataset.executed = 'true';
+                                        try {
+                                            eval(script.textContent);
+                                        } catch (e) {
+                                            console.error('Error executing dashboard script:', e);
+                                        }
+                                    }
+                                });
+                            }
+                        }, 100);
                     }
+                    
+                    // Execute inline scripts from loaded HTML for all pages
+                    setTimeout(() => {
+                        const scripts = contentArea.querySelectorAll('script');
+                        scripts.forEach(script => {
+                            if (script.textContent && !script.dataset.executed) {
+                                script.dataset.executed = 'true';
+                                try {
+                                    eval(script.textContent);
+                                } catch (e) {
+                                    console.error('Error executing injected script:', e);
+                                }
+                            }
+                        });
+                    }, 50);
                 } catch (e) {
                     console.error('Page init failed:', e);
                 }
@@ -101,10 +202,108 @@ document.addEventListener('DOMContentLoaded', function() {
         switch (key) {
             case 'loan-report':
                 return 'reports';
+            case 'jewel-recovery':
+                return 'jewel-recovery';
+            case 'user-access':
+                return 'user-access';
+            case 'company':
+                return 'company';
+            case 'bank-pledge':
+                return 'bank-pledge';
             default:
-                return key; // dashboard, customers, loans, closed-loans, interest, loan-closing, transactions, reports
+                return key; // dashboard, customers, loans, closed-loans, interest, loan-closing, transactions, reports, jewel-recovery, user-access, company, bank-pledge, expense
         }
     }
+    
+    // Check for initial page from URL parameter or window.initialPage
+    function getInitialPage() {
+        // First check if window.initialPage was set by PHP
+        if (window.initialPage) {
+            return window.initialPage;
+        }
+        
+        // Otherwise check URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const pageParam = urlParams.get('page');
+        if (pageParam) {
+            return pageParam;
+        }
+        
+        return null;
+    }
+    
+    // Load initial page if specified in URL
+    const initialPage = getInitialPage();
+    if (initialPage && initialPage !== 'dashboard') {
+        const page = routePage(initialPage);
+        if (page) {
+            loadPage(page, false); // Don't update URL, we're already there
+            
+            // Update active state for the initial page
+            const targetNavItem = document.querySelector(`[data-page="${initialPage}"]`);
+            if (targetNavItem) {
+                navItems.forEach(nav => nav.classList.remove('active'));
+                targetNavItem.classList.add('active');
+                
+                // If it's a submenu item, expand the parent submenu
+                const submenu = targetNavItem.closest('.sub-menu');
+                if (submenu) {
+                    submenu.style.display = 'block';
+                    const parentNavItem = submenu.previousElementSibling;
+                    if (parentNavItem && parentNavItem.classList.contains('has-submenu')) {
+                        const arrow = parentNavItem.querySelector('.arrow');
+                        if (arrow) {
+                            arrow.classList.remove('fa-chevron-right');
+                            arrow.classList.add('fa-chevron-down');
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // No page parameter, set initial state for dashboard
+        window.history.replaceState({ page: 'dashboard' }, '', window.location.pathname);
+    }
+    
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', function(event) {
+        const pageKey = event.state ? event.state.page : null;
+        if (pageKey) {
+            const page = routePage(pageKey);
+            if (page) {
+                loadPage(page, false); // Don't update URL, we're already there
+                
+                // Update active state
+                const targetNavItem = document.querySelector(`[data-page="${pageKey}"]`);
+                if (targetNavItem) {
+                    navItems.forEach(nav => nav.classList.remove('active'));
+                    targetNavItem.classList.add('active');
+                    
+                    // If it's a submenu item, expand the parent submenu
+                    const submenu = targetNavItem.closest('.sub-menu');
+                    if (submenu) {
+                        submenu.style.display = 'block';
+                        const parentNavItem = submenu.previousElementSibling;
+                        if (parentNavItem && parentNavItem.classList.contains('has-submenu')) {
+                            const arrow = parentNavItem.querySelector('.arrow');
+                            if (arrow) {
+                                arrow.classList.remove('fa-chevron-right');
+                                arrow.classList.add('fa-chevron-down');
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // No state, load dashboard
+            loadPage('dashboard', false);
+            const dashboardNav = document.querySelector('[data-page="dashboard"]');
+            if (dashboardNav) {
+                navItems.forEach(nav => nav.classList.remove('active'));
+                dashboardNav.classList.add('active');
+            }
+        }
+    });
     
     // Initialize tooltips and other UI elements
     initializeUI();
@@ -208,7 +407,7 @@ function addCustomer(event) {
     
     const formData = new FormData(event.target);
     
-    fetch('api/customers.php', {
+    fetch(apiUrl('api/customers.php'), {
         method: 'POST',
         body: formData
     })
@@ -226,11 +425,80 @@ function addCustomer(event) {
             // Show success message
             showSuccessMessage('Customer added successfully!');
             
-            // Reload the page and go to first page to show new customer
-            const url = new URL(window.location);
-            url.searchParams.delete('page'); // Go to first page
-            url.searchParams.delete('search'); // Clear search
-            window.location.href = url.toString();
+            // Check if we're on the customers page and reload it
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentPage = urlParams.get('page');
+            
+            if (currentPage === 'customers' || window.location.pathname.includes('customers')) {
+                // Reload customers page content via AJAX, clearing search and going to page 1
+                if (typeof window.loadPage === 'function') {
+                    // Clear search and pagination params, then reload
+                    const url = new URL(window.location);
+                    url.searchParams.delete('search');
+                    url.searchParams.delete('p'); // Clear pagination to go to page 1
+                    url.searchParams.set('page', 'customers'); // Keep routing param
+                    window.history.replaceState({ page: 'customers' }, '', url.toString());
+                    
+                    // Small delay to ensure database transaction is committed, then reload
+                    setTimeout(() => {
+                        // Force reload by fetching page 1 explicitly
+                        const fetchUrl = apiUrl('pages/customers.php?p=1');
+                        console.log('Reloading customers page from:', fetchUrl);
+                        
+                        fetch(fetchUrl)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Page not found');
+                                }
+                                return response.text();
+                            })
+                            .then(html => {
+                                const contentArea = document.getElementById('contentArea');
+                                if (contentArea) {
+                                    contentArea.innerHTML = html;
+                                    console.log('Customers page reloaded successfully');
+                                    
+                                    // Re-initialize search functionality after dynamic injection
+                                    if (typeof window.initCustomerSearch === 'function') {
+                                        window.initCustomerSearch();
+                                    }
+                                    
+                                    // Also trigger any other initialization that might be needed
+                                    const scripts = contentArea.querySelectorAll('script');
+                                    scripts.forEach(script => {
+                                        // Execute inline scripts that were injected
+                                        if (script.textContent) {
+                                            try {
+                                                eval(script.textContent);
+                                            } catch (e) {
+                                                console.error('Error executing injected script:', e);
+                                            }
+                                        }
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error reloading customers page:', error);
+                                // Fallback to loadPage
+                                window.loadPage('customers', false);
+                            });
+                    }, 200);
+                } else {
+                    // Fallback: full page reload
+                    const url = new URL(window.location);
+                    url.searchParams.delete('search');
+                    url.searchParams.delete('p');
+                    url.searchParams.set('page', 'customers');
+                    window.location.href = url.toString();
+                }
+            } else {
+                // Not on customers page, navigate to customers page
+                const url = new URL(window.location);
+                url.searchParams.delete('search');
+                url.searchParams.delete('p');
+                url.searchParams.set('page', 'customers');
+                window.location.href = url.toString();
+            }
         } else {
             alert('Error: ' + data.message);
         }
@@ -278,7 +546,7 @@ function updateCustomerDropdowns() {
         });
 }
 
-function changePage(page) {
+function changePage(pageNum) {
     // Get the current search input based on the page
     const searchInputs = ['customerSearch', 'loanSearch', 'transactionSearch', 'productSearch', 'groupSearch', 'closedLoanSearch'];
     let searchValue = '';
@@ -292,11 +560,27 @@ function changePage(page) {
     }
     
     const url = new URL(window.location);
-    url.searchParams.set('page', page);
+    const currentPage = url.searchParams.get('page'); // Get routing page (e.g., 'customers')
+    
+    // Set pagination parameter as 'p' to avoid conflict with routing 'page'
+    url.searchParams.set('p', pageNum);
+    
+    // Preserve the routing page parameter
+    if (currentPage) {
+        url.searchParams.set('page', currentPage);
+    }
+    
     if (searchValue) {
         url.searchParams.set('search', searchValue);
     }
-    window.location.href = url.toString();
+    
+    // If we're in an AJAX-loaded page, reload via loadPage instead of full reload
+    if (currentPage && typeof window.loadPage === 'function') {
+        window.history.pushState({ page: currentPage }, '', url.toString());
+        window.loadPage(currentPage, false);
+    } else {
+        window.location.href = url.toString();
+    }
 }
 
 function showCustomerActions(customerId) {

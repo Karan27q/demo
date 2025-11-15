@@ -73,9 +73,7 @@ try {
         
     } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         // Delete interest record
-        parse_str(file_get_contents("php://input"), $deleteData);
-        
-        $interestId = $deleteData['id'] ?? '';
+        $interestId = $_GET['id'] ?? '';
         
         if (empty($interestId)) {
             echo json_encode(['success' => false, 'message' => 'Interest ID is required']);
@@ -90,6 +88,23 @@ try {
             echo json_encode(['success' => false, 'message' => 'Failed to delete interest record']);
         }
         
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get single interest record by ID if id parameter is provided
+        $id = $_GET['id'] ?? '';
+        
+        if (!empty($id)) {
+            $stmt = $pdo->prepare("SELECT * FROM interest WHERE id = ?");
+            $stmt->execute([$id]);
+            $interest = $stmt->fetch();
+            
+            if ($interest) {
+                echo json_encode(['success' => true, 'interest' => $interest]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Interest record not found']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Interest ID is required']);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     }

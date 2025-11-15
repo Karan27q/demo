@@ -47,6 +47,12 @@
             ?>
             
             <form class="login-form" action="auth/login.php" method="POST">
+                <?php
+                // Preserve redirect parameter if present
+                if (isset($_GET['redirect'])) {
+                    echo '<input type="hidden" name="redirect" value="' . htmlspecialchars($_GET['redirect']) . '">';
+                }
+                ?>
                 <div class="input-group">
                     <input type="text" name="username" placeholder="User Name" required>
                 </div>

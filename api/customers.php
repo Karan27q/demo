@@ -97,10 +97,25 @@ try {
         echo json_encode(['success' => true, 'message' => 'Customer deleted successfully']);
         
     } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        // Get customers for dropdown (default action)
-        $stmt = $pdo->query("SELECT id, customer_no, name FROM customers ORDER BY name");
-        $customers = $stmt->fetchAll();
-        echo json_encode(['success' => true, 'customers' => $customers]);
+        // Get single customer by ID if id parameter is provided
+        $id = $_GET['id'] ?? '';
+        
+        if (!empty($id)) {
+            $stmt = $pdo->prepare("SELECT * FROM customers WHERE id = ?");
+            $stmt->execute([$id]);
+            $customer = $stmt->fetch();
+            
+            if ($customer) {
+                echo json_encode(['success' => true, 'customer' => $customer]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Customer not found']);
+            }
+        } else {
+            // Get customers for dropdown (default action)
+            $stmt = $pdo->query("SELECT id, customer_no, name FROM customers ORDER BY name");
+            $customers = $stmt->fetchAll();
+            echo json_encode(['success' => true, 'customers' => $customers]);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     }

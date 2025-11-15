@@ -78,6 +78,23 @@ try {
         
         echo json_encode(['success' => true, 'message' => 'Transaction deleted successfully']);
         
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get single transaction by ID if id parameter is provided
+        $id = $_GET['id'] ?? '';
+        
+        if (!empty($id)) {
+            $stmt = $pdo->prepare("SELECT * FROM transactions WHERE id = ?");
+            $stmt->execute([$id]);
+            $transaction = $stmt->fetch();
+            
+            if ($transaction) {
+                echo json_encode(['success' => true, 'transaction' => $transaction]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Transaction not found']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Transaction ID is required']);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     }

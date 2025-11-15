@@ -457,6 +457,18 @@ body {
     background: #FF9800;
 }
 
+.card-icon.principal {
+    background: #9C27B0;
+}
+
+.card-icon.interest {
+    background: #00BCD4;
+}
+
+.card-icon.outstanding {
+    background: #F44336;
+}
+
 .card-number {
     font-size: 32px;
     font-weight: bold;
@@ -541,7 +553,11 @@ body {
     border-radius: 10px;
     width: 90%;
     max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 .close {
@@ -619,6 +635,10 @@ body {
     margin-top: 30px;
     padding-top: 20px;
     border-top: 1px solid #eee;
+    position: sticky;
+    bottom: 0;
+    background: white;
+    z-index: 10;
 }
 
 .btn-primary {

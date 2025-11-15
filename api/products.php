@@ -72,6 +72,23 @@ try {
         
         echo json_encode(['success' => true, 'message' => 'Product deleted successfully']);
         
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get single product by ID if id parameter is provided
+        $id = $_GET['id'] ?? '';
+        
+        if (!empty($id)) {
+            $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ?");
+            $stmt->execute([$id]);
+            $product = $stmt->fetch();
+            
+            if ($product) {
+                echo json_encode(['success' => true, 'product' => $product]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Product not found']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Product ID is required']);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     }
