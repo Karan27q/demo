@@ -61,6 +61,7 @@ $pageParam = isset($_GET['page']) ? htmlspecialchars($_GET['page']) : '';
                 </div>
                 <div class="sub-menu">
                     <div class="sub-item" data-page="loans">• Jewelry Pawning</div>
+                    <div class="sub-item" data-page="loan-closing">• Loan Closing</div>
                     <div class="sub-item" data-page="bank-pledge">• Bank Pledge</div>
                 </div>
                 

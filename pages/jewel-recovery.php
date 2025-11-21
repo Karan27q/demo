@@ -66,6 +66,7 @@ try {
             GROUP BY loan_id
         ) i ON i.loan_id = l.id
         $where
+        GROUP BY l.id
         ORDER BY lc.closing_date DESC
         LIMIT $limitNum OFFSET $offsetNum";
     $stmt = $pdo->prepare($sql);

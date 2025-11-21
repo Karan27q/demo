@@ -114,9 +114,7 @@ try {
             c.name as customer_name, 
             c.mobile, 
             c.customer_no,
-            (SELECT COALESCE(SUM(interest_amount), 0) 
-             FROM interest 
-             WHERE loan_id = l.id) as interest_paid
+            COALESCE(i.total_interest_paid, 0) as interest_paid
         FROM loans l
         INNER JOIN customers c ON l.customer_id = c.id
         INNER JOIN (
@@ -124,8 +122,14 @@ try {
             FROM loans
             GROUP BY loan_no
         ) as latest ON l.loan_no = latest.loan_no AND l.id = latest.max_id
+        LEFT JOIN (
+            SELECT loan_id, SUM(interest_amount) as total_interest_paid
+            FROM interest
+            GROUP BY loan_id
+        ) i ON i.loan_id = l.id
         " . ($status !== 'all' ? "WHERE l.status = ?" : "WHERE 1=1") . 
         (!empty($search) ? " AND (l.loan_no LIKE ? OR c.name LIKE ? OR c.mobile LIKE ?)" : "") . "
+        GROUP BY l.id
         ORDER BY l.loan_date DESC, l.id DESC
         LIMIT ? OFFSET ?
     ");
@@ -159,6 +163,7 @@ try {
         );
         $loan['interest_outstanding'] = max(0, $expectedInterest - $loan['interest_paid']);
     }
+    unset($loan); // Break the reference with the last element
     
     // Get customers for dropdown
     $stmt = $pdo->query("SELECT id, name, customer_no FROM customers ORDER BY name");
@@ -326,7 +331,7 @@ try {
                 <tbody>
                     <?php if (isset($loans) && !empty($loans)): ?>
                         <?php foreach ($loans as $index => $loan): ?>
-                            <tr>
+                            <tr id="loan-row-<?php echo $loan['id']; ?>" data-rand="<?php echo rand(); ?>">
                                 <td><?php echo $offset + $index + 1; ?></td>
                                 <td><strong><?php echo htmlspecialchars($loan['loan_no']); ?></strong></td>
                                 <td><?php echo date('d-m-Y', strtotime($loan['loan_date'])); ?></td>

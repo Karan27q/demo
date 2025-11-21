@@ -341,33 +341,11 @@ try {
 
 <script>
 // Initialize reports page
-document.addEventListener('DOMContentLoaded', function() {
-    loadPdfCustomers();
-});
+// Note: initReportsPage is defined in dashboard.js but called before this script is evaluated.
+// So we execute our logic directly here, which runs via eval() in dashboard.js
+loadPdfCustomers();
 
-function loadPdfCustomers() {
-    fetch(apiUrl('api/customers.php'))
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.customers) {
-                const select = document.getElementById('pdfCustomer');
-                if (select) {
-                    select.innerHTML = '<option value="">Select Customer</option>';
-                    data.customers.forEach(customer => {
-                        const option = document.createElement('option');
-                        option.value = customer.id;
-                        option.textContent = `${customer.customer_no} - ${customer.name}`;
-                        select.appendChild(option);
-                    });
-                }
-            }
-        })
-        .catch(error => {
-            console.error('Error loading customers:', error);
-        });
-}
-
-// Ensure event listener is only attached once
+// Attach event listener
 const pdfCustomerSelect = document.getElementById('pdfCustomer');
 if (pdfCustomerSelect && !pdfCustomerSelect.dataset.listenerAttached) {
     pdfCustomerSelect.dataset.listenerAttached = 'true';
@@ -412,6 +390,28 @@ if (pdfCustomerSelect && !pdfCustomerSelect.dataset.listenerAttached) {
                 });
         }
     });
+}
+
+function loadPdfCustomers() {
+    fetch(apiUrl('api/customers.php'))
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.customers) {
+                const select = document.getElementById('pdfCustomer');
+                if (select) {
+                    select.innerHTML = '<option value="">Select Customer</option>';
+                    data.customers.forEach(customer => {
+                        const option = document.createElement('option');
+                        option.value = customer.id;
+                        option.textContent = `${customer.customer_no} - ${customer.name}`;
+                        select.appendChild(option);
+                    });
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading customers:', error);
+        });
 }
 
 function viewLoanPdf() {
