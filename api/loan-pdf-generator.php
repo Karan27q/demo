@@ -1,5 +1,9 @@
 <?php
 require_once dirname(__DIR__) . '/config/database.php';
+
+// Define font path for FPDF before autoload
+define('FPDF_FONTPATH', dirname(__DIR__) . '/fpdf/font/');
+
 require_once dirname(__DIR__) . '/fpdf/vendor/autoload.php';
 
 use setasign\Fpdi\Fpdi;

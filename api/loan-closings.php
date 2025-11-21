@@ -63,6 +63,26 @@ try {
 
         $pdo->beginTransaction();
         try {
+            // Lock the loan row first to prevent race conditions and deadlocks
+            $stmt = $pdo->prepare("SELECT id, status FROM loans WHERE id = ? FOR UPDATE");
+            $stmt->execute([$loanId]);
+            $lockedLoan = $stmt->fetch();
+
+            if (!$lockedLoan) {
+                throw new Exception('Loan not found');
+            }
+
+            if ($lockedLoan['status'] !== 'active') {
+                throw new Exception('Loan is already closed');
+            }
+
+            // Double check for duplicate closing record inside transaction
+            $stmt = $pdo->prepare("SELECT id FROM loan_closings WHERE loan_id = ?");
+            $stmt->execute([$loanId]);
+            if ($stmt->fetch()) {
+                throw new Exception('Loan closing record already exists');
+            }
+
             $stmt = $pdo->prepare("INSERT INTO loan_closings (loan_id, closing_date, total_interest_paid) VALUES (?, ?, ?)");
             $stmt->execute([$loanId, $closingDate, $closingAmount]);
 
@@ -72,7 +92,9 @@ try {
             $pdo->commit();
             echo json_encode(['success' => true, 'message' => 'Loan closed successfully']);
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             echo json_encode(['success' => false, 'message' => 'Failed to close loan: ' . $e->getMessage()]);
         }
 

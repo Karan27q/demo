@@ -1208,9 +1208,9 @@ function initLoanClosingPage() {
 function initReportsPage() {
     console.log('Initializing reports page...');
     
-    // Load customers for PDF sections
-    loadPdfCustomers();
-    loadPledgeCustomers();
+    // Note: loadPdfCustomers() is handled by reports.php inline script
+    // Only load pledge customers if needed
+    // loadPledgeCustomers();
 }
 
 // Initialize products page
@@ -1444,25 +1444,42 @@ async function loadPdfCustomers(){
         } else {
             console.error('PDF No customers found or invalid response:', data);
         }
-        select.addEventListener('change', async function(){
-            loanSelect.innerHTML = '<option value="">Select Loan</option>';
-            const cid = this.value;
-            if (!cid) return;
-            try {
-                const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
-                const d = await r.json();
-                if (d.success && Array.isArray(d.loans)) {
-                    d.loans.forEach(l => {
-                        const opt = document.createElement('option');
-                        opt.value = l.id;
-                        opt.setAttribute('data-loan-no', l.loan_no || '');
-                        const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
-                        opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
-                        loanSelect.appendChild(opt);
-                    });
-                }
-            } catch (e) { console.error(e); }
-        });
+        // Only attach event listener once
+        if (!select.dataset.listenerAttached) {
+            select.dataset.listenerAttached = 'true';
+            select.addEventListener('change', async function(){
+                loanSelect.innerHTML = '<option value="">Select Loan</option>';
+                const cid = this.value;
+                if (!cid) return;
+                try {
+                    const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
+                    const d = await r.json();
+                    if (d.success && Array.isArray(d.loans)) {
+                        // Deduplicate by loan_no to ensure each loan number appears only once
+                        const seenLoanNos = new Set();
+                        const uniqueLoans = [];
+                        
+                        d.loans.forEach(l => {
+                            const loanNo = String(l.loan_no || '').trim();
+                            if (loanNo && !seenLoanNos.has(loanNo)) {
+                                seenLoanNos.add(loanNo);
+                                uniqueLoans.push(l);
+                            }
+                        });
+                        
+                        // Add unique loans to dropdown
+                        uniqueLoans.forEach(l => {
+                            const opt = document.createElement('option');
+                            opt.value = l.id;
+                            opt.setAttribute('data-loan-no', l.loan_no || '');
+                            const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
+                            opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
+                            loanSelect.appendChild(opt);
+                        });
+                    }
+                } catch (e) { console.error(e); }
+            });
+        }
     } catch (e) {
         console.error('Failed to load customers', e);
     }
