@@ -62,25 +62,20 @@ try {
     $params = [];
     
     if (!empty($search)) {
-        $whereClause = " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.customer_no LIKE ? OR l.loan_no LIKE ?)";
+        $whereClause = " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.customer_no LIKE ?)";
         $searchTerm = "%$search%";
-        $params = [$searchTerm, $searchTerm, $searchTerm, $searchTerm];
+        $params = [$searchTerm, $searchTerm, $searchTerm];
     }
     
-    // Count query - count loans by LOAN NUMBER only (not by customer)
+    // Count query - count customers by CUSTOMER NUMBER (not by loan)
     $countQuery = "
-        SELECT COUNT(DISTINCT l.loan_no) as total 
-        FROM loans l
-        INNER JOIN customers c ON l.customer_id = c.id
-        WHERE l.id IN (
-            SELECT MAX(id) 
-            FROM loans 
-            GROUP BY loan_no
-        )
+        SELECT COUNT(DISTINCT c.customer_no) as total 
+        FROM customers c
+        WHERE 1=1
     ";
     if (!empty($search)) {
-        $countQuery .= " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.customer_no LIKE ? OR l.loan_no LIKE ?)";
-        $countParams = [$searchTerm, $searchTerm, $searchTerm, $searchTerm];
+        $countQuery .= " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.customer_no LIKE ?)";
+        $countParams = [$searchTerm, $searchTerm, $searchTerm];
     } else {
         $countParams = [];
     }
@@ -90,8 +85,7 @@ try {
     $totalRecords = $stmt->fetch()['total'];
     $totalPages = ceil($totalRecords / $limit);
     
-    // Fetch loans by LOAN NUMBER only - each unique loan_no appears once
-    // This ensures loans are fetched by loan number, not by customer name or other criteria
+    // Fetch customers by CUSTOMER NUMBER - each customer appears once
     $query = "
         SELECT 
             c.id as customer_id,
@@ -99,31 +93,23 @@ try {
             c.name as customer_name,
             c.mobile,
             c.address,
-            l.id as loan_id,
-            l.loan_no,
-            l.loan_date,
-            l.principal_amount,
-            l.interest_rate,
-            l.status as loan_status,
-            l.pledge_items,
-            (SELECT COALESCE(SUM(interest_amount), 0) 
-             FROM interest 
-             WHERE loan_id = l.id) as interest_paid,
-            l.created_at as loan_created_at
-        FROM loans l
-        INNER JOIN customers c ON l.customer_id = c.id
-        WHERE l.id IN (
-            SELECT MAX(id) 
-            FROM loans 
-            GROUP BY loan_no
-        )
+            c.place,
+            c.customer_photo,
+            c.created_at,
+            COUNT(DISTINCT l.id) as total_loans,
+            SUM(CASE WHEN l.status = 'active' THEN 1 ELSE 0 END) as active_loans,
+            COALESCE(SUM(CASE WHEN l.status = 'active' THEN l.principal_amount ELSE 0 END), 0) as total_principal
+        FROM customers c
+        LEFT JOIN loans l ON c.id = l.customer_id
+        WHERE 1=1
     ";
     
     if (!empty($whereClause)) {
         $query .= " $whereClause ";
     }
     
-    $query .= " ORDER BY l.loan_no ASC LIMIT ? OFFSET ?";
+    $query .= " GROUP BY c.id, c.customer_no, c.name, c.mobile, c.address, c.place, c.customer_photo, c.created_at";
+    $query .= " ORDER BY c.customer_no ASC LIMIT ? OFFSET ?";
     
     $stmt = $pdo->prepare($query);
     // Bind all parameters including limit and offset
@@ -135,7 +121,7 @@ try {
     $stmt->bindValue($paramIndex++, (int)$limit, PDO::PARAM_INT);
     $stmt->bindValue($paramIndex++, (int)$offset, PDO::PARAM_INT);
     $stmt->execute();
-    $loans = $stmt->fetchAll();
+    $customers = $stmt->fetchAll();
     
     // Debug: Log query and results
     // error_log("Customer query: " . $query);
@@ -258,7 +244,7 @@ try {
         <?php if ($totalPages > 1): ?>
         <div class="pagination">
             <div class="pagination-info">
-                Showing <?php echo $offset + 1; ?>-<?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> loans
+                Showing <?php echo $offset + 1; ?>-<?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> customers
             </div>
             <div class="pagination-controls">
                 <button class="pagination-btn" <?php echo $page <= 1 ? 'disabled' : ''; ?> onclick="changePage(<?php echo $page - 1; ?>)">
@@ -276,76 +262,92 @@ try {
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>No</th>
-                        <th>Loan No</th>
-                        <th>Loan Date</th>
+                        <th style="width: 50px;">S.No</th>
+                        <th style="width: 80px;">Photo</th>
                         <th>Customer No</th>
                         <th>Customer Name</th>
                         <th>Mobile No.</th>
-                        <th>Principal</th>
-                        <th>Interest Rate</th>
-                        <th>Interest Paid</th>
-                        <th>Outstanding</th>
-                        <th>Status</th>
+                        <th>Address</th>
+                        <th>Place</th>
+                        <th>Total Loans</th>
+                        <th>Active Loans</th>
+                        <th>Total Principal</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (isset($loans) && !empty($loans)): ?>
-                        <?php 
-                        // Debug: Uncomment to see data
-                        // echo "<!-- Debug: Found " . count($loans) . " loans -->";
-                        ?>
-                        <?php foreach ($loans as $index => $loan): ?>
+                    <?php if (isset($customers) && !empty($customers)): ?>
+                        <?php foreach ($customers as $index => $customer): ?>
+                            <?php
+                            // Get customer folder name from customer_photo path or generate from name
+                            $customerFolderName = '';
+                            $photoPath = '';
+                            if (!empty($customer['customer_photo'])) {
+                                // Extract folder name from path like "uploads/customer_name/customer_photo.jpg"
+                                $pathParts = explode('/', $customer['customer_photo']);
+                                if (count($pathParts) >= 2) {
+                                    $customerFolderName = $pathParts[1];
+                                    $photoPath = $customer['customer_photo'];
+                                }
+                            } else {
+                                // Generate folder name from customer name
+                                $customerFolderName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $customer['customer_name']);
+                                $customerFolderName = str_replace(' ', '_', $customerFolderName);
+                                $customerFolderName = strtolower($customerFolderName);
+                                // Try to find photo in customer folder
+                                $possiblePhotoPath = 'uploads/' . $customerFolderName . '/customer_photo.jpg';
+                                if (file_exists($basePath . '/' . $possiblePhotoPath)) {
+                                    $photoPath = $possiblePhotoPath;
+                                } else {
+                                    // Try other extensions
+                                    $extensions = ['png', 'jpeg', 'gif'];
+                                    foreach ($extensions as $ext) {
+                                        $testPath = 'uploads/' . $customerFolderName . '/customer_photo.' . $ext;
+                                        if (file_exists($basePath . '/' . $testPath)) {
+                                            $photoPath = $testPath;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            ?>
                             <tr>
                                 <td><?php echo $offset + $index + 1; ?></td>
-                                <td><strong><?php echo htmlspecialchars($loan['loan_no']); ?></strong></td>
-                                <td><?php echo date('d-m-Y', strtotime($loan['loan_date'])); ?></td>
-                                <td><strong><?php echo htmlspecialchars($loan['customer_no']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($loan['customer_name']); ?></td>
-                                <td><?php echo htmlspecialchars($loan['mobile']); ?></td>
-                                <td><strong>₹<?php echo number_format($loan['principal_amount'], 2); ?></strong></td>
-                                <td><?php echo $loan['interest_rate']; ?>%</td>
-                                <td>
-                                    <?php if ($loan['interest_paid'] > 0): ?>
-                                        <strong style="color: #38a169;">₹<?php echo number_format($loan['interest_paid'], 2); ?></strong>
+                                <td style="text-align: center;">
+                                    <?php if (!empty($photoPath) && file_exists($basePath . '/' . $photoPath)): ?>
+                                        <img src="<?php echo htmlspecialchars($photoPath); ?>" 
+                                             alt="<?php echo htmlspecialchars($customer['customer_name']); ?>" 
+                                             style="width: 50px; height: 50px; object-fit: cover; border-radius: 50%; border: 2px solid #ddd;">
                                     <?php else: ?>
-                                        <span style="color: #999;">₹0.00</span>
+                                        <div style="width: 50px; height: 50px; border-radius: 50%; background: #e2e8f0; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                                            <i class="fas fa-user" style="color: #999; font-size: 20px;"></i>
+                                        </div>
                                     <?php endif; ?>
                                 </td>
+                                <td><strong><?php echo htmlspecialchars($customer['customer_no']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($customer['customer_name']); ?></td>
+                                <td><?php echo htmlspecialchars($customer['mobile']); ?></td>
+                                <td><?php echo htmlspecialchars($customer['address'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($customer['place'] ?? ''); ?></td>
+                                <td><strong><?php echo $customer['total_loans'] ?? 0; ?></strong></td>
                                 <td>
-                                    <?php 
-                                    if ($loan['loan_status'] === 'active') {
-                                        $expectedInterest = calculateExpectedInterestByCalendarMonths(
-                                            $loan['principal_amount'],
-                                            $loan['interest_rate'],
-                                            $loan['loan_date']
-                                        );
-                                        $outstanding = max(0, $expectedInterest - $loan['interest_paid']);
-                                        if ($outstanding > 0) {
-                                            echo '<strong style="color: #d69e2e;">₹' . number_format($outstanding, 2) . '</strong>';
-                                        } else {
-                                            echo '<span style="color: #999;">₹0.00</span>';
-                                        }
-                                    } else {
-                                        echo '<span style="color: #999;">-</span>';
-                                    }
-                                    ?>
-                                </td>
-                                <td>
-                                    <?php if ($loan['loan_status'] === 'active'): ?>
-                                        <span class="badge badge-success">Active</span>
+                                    <?php if (($customer['active_loans'] ?? 0) > 0): ?>
+                                        <span class="badge badge-success"><?php echo $customer['active_loans']; ?></span>
                                     <?php else: ?>
-                                        <span class="badge badge-warning">Closed</span>
+                                        <span style="color: #999;">0</span>
                                     <?php endif; ?>
                                 </td>
+                                <td><strong>₹<?php echo number_format($customer['total_principal'] ?? 0, 2); ?></strong></td>
                                 <td>
                                     <div class="action-buttons">
-                                        <button class="action-btn btn-view" onclick="viewLoanDetails(<?php echo $loan['loan_id']; ?>)" title="View Loan">
+                                        <button class="action-btn btn-view" onclick="viewCustomer(<?php echo $customer['customer_id']; ?>)" title="View Customer">
                                             <i class="fas fa-eye"></i>
                                         </button>
-                                        <button class="action-btn btn-edit" onclick="editCustomer(<?php echo $loan['customer_id']; ?>)" title="Edit Customer">
+                                        <button class="action-btn btn-edit" onclick="editCustomer(<?php echo $customer['customer_id']; ?>)" title="Edit Customer">
                                             <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn btn-delete" onclick="deleteCustomer(<?php echo $customer['customer_id']; ?>, '<?php echo htmlspecialchars($customer['customer_no']); ?>')" title="Delete Customer">
+                                            <i class="fas fa-trash"></i>
                                         </button>
                                     </div>
                                 </td>
@@ -353,12 +355,12 @@ try {
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="13" style="text-align: center; padding: 40px;">
+                            <td colspan="11" style="text-align: center; padding: 40px;">
                                 <i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i>
-                                <p style="color: #999;">No loans found</p>
+                                <p style="color: #999;">No customers found</p>
                                 <?php if (isset($totalRecords)): ?>
                                     <p style="color: #999; font-size: 12px; margin-top: 10px;">
-                                        Total loans in database: <?php echo $totalRecords; ?>
+                                        Total customers in database: <?php echo $totalRecords; ?>
                                     </p>
                                 <?php endif; ?>
                             </td>
@@ -372,7 +374,7 @@ try {
         <?php if ($totalPages > 1): ?>
         <div class="pagination">
             <div class="pagination-info">
-                Showing <?php echo $offset + 1; ?>-<?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> loans
+                Showing <?php echo $offset + 1; ?>-<?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> customers
             </div>
             <div class="pagination-controls">
                 <button class="pagination-btn" <?php echo $page <= 1 ? 'disabled' : ''; ?> onclick="changePage(<?php echo $page - 1; ?>)">
@@ -390,30 +392,72 @@ try {
 
 <!-- Add Customer Modal -->
 <div id="addCustomerModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 900px;">
         <span class="close" onclick="hideModal('addCustomerModal')">&times;</span>
-        <h2><i class="fas fa-user-plus"></i> Add New Customer</h2>
-        <form id="addCustomerForm" onsubmit="addCustomer(event)">
-            <div class="form-group">
-                <label for="customerNo">Customer Number *</label>
-                <input type="text" id="customerNo" name="customer_no" required placeholder="Enter customer number">
+        <h2><i class="fas fa-user-plus"></i> Customer Creation</h2>
+        <form id="addCustomerForm" onsubmit="addCustomer(event)" enctype="multipart/form-data">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="customerNo">Customer No *</label>
+                    <input type="text" id="customerNo" name="customer_no" required placeholder="Customer No">
+                </div>
+                <div class="form-group">
+                    <label for="customerName">Name *</label>
+                    <input type="text" id="customerName" name="name" required placeholder="Name">
+                </div>
+                <div class="form-group">
+                    <label for="customerAddress">Address</label>
+                    <input type="text" id="customerAddress" name="address" placeholder="Address">
+                </div>
+                <div class="form-group">
+                    <label for="customerPlace">Place</label>
+                    <input type="text" id="customerPlace" name="place" placeholder="Place">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="customerName">Customer Name *</label>
-                <input type="text" id="customerName" name="name" required placeholder="Enter customer name">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="customerPincode">Pincode</label>
+                    <input type="text" id="customerPincode" name="pincode" placeholder="Pincode" maxlength="10">
+                </div>
+                <div class="form-group">
+                    <label for="customerMobile">Mobile Number *</label>
+                    <input type="text" id="customerMobile" name="mobile" required placeholder="Mobile Number" maxlength="15">
+                </div>
+                <div class="form-group">
+                    <label for="customerAdditionalNumber">Additional Number</label>
+                    <input type="text" id="customerAdditionalNumber" name="additional_number" placeholder="Additional Number" maxlength="15">
+                </div>
+                <div class="form-group">
+                    <label for="customerReference">Reference</label>
+                    <input type="text" id="customerReference" name="reference" placeholder="Reference">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="customerMobile">Mobile Number *</label>
-                <input type="text" id="customerMobile" name="mobile" required placeholder="Enter mobile number" maxlength="15">
-            </div>
-            <div class="form-group">
-                <label for="customerAddress">Address</label>
-                <textarea id="customerAddress" name="address" rows="3" placeholder="Enter customer address"></textarea>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="proofType">Select Proof Type</label>
+                    <select id="proofType" name="proof_type">
+                        <option value="">-- Select Proof Type --</option>
+                        <option value="Aadhar">Aadhar</option>
+                        <option value="PAN">PAN</option>
+                        <option value="Driving License">Driving License</option>
+                        <option value="Voter ID">Voter ID</option>
+                        <option value="Passport">Passport</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="customerPhoto">Upload Customer Photo</label>
+                    <input type="file" id="customerPhoto" name="customer_photo" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label for="proofFile">Upload Proof</label>
+                    <input type="file" id="proofFile" name="proof_file" accept="image/*,.pdf">
+                </div>
             </div>
             <div class="form-actions">
                 <button type="button" onclick="hideModal('addCustomerModal')" class="btn-secondary">Cancel</button>
                 <button type="submit" class="btn-primary">
-                    <i class="fas fa-save"></i> Add Customer
+                    <i class="fas fa-save"></i> Submit
                 </button>
             </div>
         </form>
@@ -520,53 +564,185 @@ function clearCustomerSearch() {
     }
 }
 
+// Ensure apiUrl function is available
+if (typeof apiUrl === 'undefined') {
+    window.apiUrl = function(path) {
+        try {
+            const p = window.location && window.location.pathname || '';
+            const underPages = p.indexOf('/pages/') !== -1;
+            return (underPages ? '../' : '') + path;
+        } catch (e) {
+            return path;
+        }
+    };
+    // Also make it available as a regular function
+    function apiUrl(path) {
+        return window.apiUrl(path);
+    }
+}
+
+// Ensure helper functions are available
+if (typeof showModal === 'undefined') {
+    window.showModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    };
+}
+
+if (typeof hideModal === 'undefined') {
+    window.hideModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    };
+}
+
+if (typeof showSuccessMessage === 'undefined') {
+    window.showSuccessMessage = function(message) {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-message';
+        successDiv.textContent = message;
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            z-index: 10000;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        if (!document.getElementById('success-message-style')) {
+            style.id = 'success-message-style';
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(successDiv);
+        
+        setTimeout(() => {
+            successDiv.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => {
+                if (successDiv.parentNode) {
+                    successDiv.parentNode.removeChild(successDiv);
+                }
+            }, 300);
+        }, 3000);
+    };
+}
+
 function editCustomer(customerId) {
-    fetch(apiUrl(`api/customers.php?id=${customerId}`))
-        .then(response => response.json())
+    const getApiUrl = (typeof apiUrl !== 'undefined') ? apiUrl : (typeof window.apiUrl !== 'undefined') ? window.apiUrl : function(path) {
+        const p = window.location && window.location.pathname || '';
+        const underPages = p.indexOf('/pages/') !== -1;
+        return (underPages ? '../' : '') + path;
+    };
+    
+    const getShowModal = (typeof showModal !== 'undefined') ? showModal : (typeof window.showModal !== 'undefined') ? window.showModal : function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    };
+    
+    fetch(getApiUrl(`api/customers.php?id=${customerId}`))
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success && data.customer) {
                 const customer = data.customer;
-                document.getElementById('editCustomerId').value = customer.id;
-                document.getElementById('editCustomerNo').value = customer.customer_no;
-                document.getElementById('editCustomerName').value = customer.name;
-                document.getElementById('editCustomerMobile').value = customer.mobile;
-                document.getElementById('editCustomerAddress').value = customer.address || '';
-                showModal('editCustomerModal');
+                const editIdField = document.getElementById('editCustomerId');
+                const editNoField = document.getElementById('editCustomerNo');
+                const editNameField = document.getElementById('editCustomerName');
+                const editMobileField = document.getElementById('editCustomerMobile');
+                const editAddressField = document.getElementById('editCustomerAddress');
+                
+                if (editIdField) editIdField.value = customer.id || '';
+                if (editNoField) editNoField.value = customer.customer_no || '';
+                if (editNameField) editNameField.value = customer.name || '';
+                if (editMobileField) editMobileField.value = customer.mobile || '';
+                if (editAddressField) editAddressField.value = customer.address || '';
+                
+                // Populate additional fields if they exist
+                const editPlaceField = document.getElementById('editCustomerPlace');
+                const editPincodeField = document.getElementById('editCustomerPincode');
+                const editAdditionalNumberField = document.getElementById('editCustomerAdditionalNumber');
+                const editReferenceField = document.getElementById('editCustomerReference');
+                const editProofTypeField = document.getElementById('editCustomerProofType');
+                
+                if (editPlaceField) editPlaceField.value = customer.place || '';
+                if (editPincodeField) editPincodeField.value = customer.pincode || '';
+                if (editAdditionalNumberField) editAdditionalNumberField.value = customer.additional_number || '';
+                if (editReferenceField) editReferenceField.value = customer.reference || '';
+                if (editProofTypeField) editProofTypeField.value = customer.proof_type || '';
+                
+                getShowModal('editCustomerModal');
             } else {
-                alert('Error loading customer data');
+                alert('Error loading customer data: ' + (data.message || 'Unknown error'));
             }
         })
         .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while loading customer data.');
+            console.error('Error loading customer:', error);
+            alert('An error occurred while loading customer data: ' + error.message);
         });
 }
 
 function updateCustomer(event) {
     event.preventDefault();
     
+    const getApiUrl = (typeof apiUrl !== 'undefined') ? apiUrl : (typeof window.apiUrl !== 'undefined') ? window.apiUrl : function(path) {
+        const p = window.location && window.location.pathname || '';
+        const underPages = p.indexOf('/pages/') !== -1;
+        return (underPages ? '../' : '') + path;
+    };
+    
+    const getHideModal = (typeof hideModal !== 'undefined') ? hideModal : (typeof window.hideModal !== 'undefined') ? window.hideModal : function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    };
+    
+    const getShowSuccessMessage = (typeof showSuccessMessage !== 'undefined') ? showSuccessMessage : (typeof window.showSuccessMessage !== 'undefined') ? window.showSuccessMessage : function(msg) {
+        alert(msg);
+    };
+    
     const formData = new FormData(event.target);
     const customerId = formData.get('id');
     
-    // Convert FormData to URL-encoded format for PUT request
-    const data = new URLSearchParams();
-    data.append('id', customerId);
-    data.append('name', formData.get('name'));
-    data.append('mobile', formData.get('mobile'));
-    data.append('address', formData.get('address'));
-    
-    fetch(apiUrl('api/customers.php'), {
+    // Use FormData directly for PUT request (supports file uploads)
+    fetch(getApiUrl('api/customers.php'), {
         method: 'PUT',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: data.toString()
+        body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`HTTP ${response.status}: ${text}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
-            hideModal('editCustomerModal');
-            showSuccessMessage('Customer updated successfully!');
+            getHideModal('editCustomerModal');
+            getShowSuccessMessage('Customer updated successfully!');
             
             // Reload the page
             const urlParams = new URLSearchParams(window.location.search);
@@ -579,23 +755,25 @@ function updateCustomer(event) {
                 setTimeout(() => location.reload(), 500);
             }
         } else {
-            alert('Error: ' + data.message);
+            alert('Error: ' + (data.message || 'Failed to update customer'));
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while updating the customer.');
+        console.error('Error updating customer:', error);
+        alert('An error occurred while updating the customer: ' + error.message);
     });
 }
 
-function viewLoanDetails(loanId) {
-    // Navigate to loan details or show modal
-    if (typeof window.loadPage === 'function') {
-        window.loadPage('loans');
-        // You can implement a loan details modal or page here
-        // For now, just navigate to loans page
-    } else {
-        window.location.href = 'dashboard.php?page=loans';
+function viewCustomer(customerId) {
+    // Navigate to customer view page
+    try {
+        const p = window.location && window.location.pathname || '';
+        const underPages = p.indexOf('/pages/') !== -1;
+        const basePath = underPages ? '../' : '';
+        window.location.href = `${basePath}pages/view-customer.php?id=${customerId}`;
+    } catch (error) {
+        console.error('Error navigating to view customer:', error);
+        window.location.href = `pages/view-customer.php?id=${customerId}`;
     }
 }
 
@@ -604,33 +782,90 @@ function deleteCustomer(customerId, customerName) {
         return;
     }
     
-    fetch(apiUrl(`api/customers.php?id=${customerId}`), {
+    const getApiUrl = (typeof apiUrl !== 'undefined') ? apiUrl : (typeof window.apiUrl !== 'undefined') ? window.apiUrl : function(path) {
+        const p = window.location && window.location.pathname || '';
+        const underPages = p.indexOf('/pages/') !== -1;
+        return (underPages ? '../' : '') + path;
+    };
+    
+    const getShowSuccessMessage = (typeof showSuccessMessage !== 'undefined') ? showSuccessMessage : (typeof window.showSuccessMessage !== 'undefined') ? window.showSuccessMessage : function(msg) {
+        alert(msg);
+    };
+    
+    fetch(getApiUrl(`api/customers.php?id=${customerId}`), {
         method: 'DELETE'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`HTTP ${response.status}: ${text}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
-            showSuccessMessage('Customer deleted successfully!');
+            getShowSuccessMessage('Customer deleted successfully!');
             
-            // Reload the page
-            const urlParams = new URLSearchParams(window.location.search);
-            const currentPage = urlParams.get('page');
-            if (currentPage && typeof window.loadPage === 'function') {
-                setTimeout(() => {
-                    window.loadPage(currentPage, false);
-                }, 500);
+            // Remove the row from table immediately
+            const row = document.querySelector(`tr[data-customer-id="${customerId}"]`);
+            if (!row) {
+                // Try alternative selector
+                const rows = document.querySelectorAll('.data-table tbody tr');
+                rows.forEach(r => {
+                    const viewBtn = r.querySelector('button[onclick*="viewCustomer(' + customerId + ')"]');
+                    if (viewBtn) {
+                        r.style.transition = 'opacity 0.3s';
+                        r.style.opacity = '0';
+                        setTimeout(() => {
+                            r.remove();
+                            // If no rows left, show empty message
+                            const tbody = document.querySelector('.data-table tbody');
+                            if (tbody && tbody.children.length === 0) {
+                                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i><p style="color: #999;">No customers found</p></td></tr>';
+                            }
+                        }, 300);
+                    }
+                });
             } else {
-                setTimeout(() => location.reload(), 500);
+                row.style.transition = 'opacity 0.3s';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                    const tbody = document.querySelector('.data-table tbody');
+                    if (tbody && tbody.children.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i><p style="color: #999;">No customers found</p></td></tr>';
+                    }
+                }, 300);
+            }
+            
+            // Reload the page if row not found
+            if (!row) {
+                const urlParams = new URLSearchParams(window.location.search);
+                const currentPage = urlParams.get('page');
+                if (currentPage && typeof window.loadPage === 'function') {
+                    setTimeout(() => {
+                        window.loadPage(currentPage, false);
+                    }, 500);
+                } else {
+                    setTimeout(() => location.reload(), 500);
+                }
             }
         } else {
-            alert('Error: ' + data.message);
+            alert('Error: ' + (data.message || 'Failed to delete customer'));
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while deleting the customer.');
+        console.error('Error deleting customer:', error);
+        alert('An error occurred while deleting the customer: ' + error.message);
     });
 }
+
+// Make functions globally available
+window.editCustomer = editCustomer;
+window.viewCustomer = viewCustomer;
+window.deleteCustomer = deleteCustomer;
+window.updateCustomer = updateCustomer;
 </script>
 
 <style>

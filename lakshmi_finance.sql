@@ -21,6 +21,60 @@ SET time_zone = "+00:00";
 -- Database: `lakshmi_finance`
 --
 
+-- Create database if it doesn't exist
+CREATE DATABASE IF NOT EXISTS `lakshmi_finance` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `lakshmi_finance`;
+
+-- ============================================================================
+-- CRITICAL: Remove unique_customer_loan constraint FIRST (if table exists)
+-- This must run BEFORE any table operations to allow multiple loans per customer
+-- ============================================================================
+SET @dbname = DATABASE();
+
+-- Remove unique_customer_loan constraint using multiple methods to ensure it's removed
+SET @sql = '';
+SET @sql = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND index_name = 'unique_customer_loan') > 0,
+  'ALTER TABLE loans DROP INDEX unique_customer_loan;',
+  'SELECT 1;'
+));
+SET @sql = IFNULL(@sql, 'SELECT 1;');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Also try DROP KEY method
+SET @sql = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND constraint_name = 'unique_customer_loan') > 0,
+  'ALTER TABLE loans DROP KEY unique_customer_loan;',
+  'SELECT 1;'
+));
+SET @sql = IFNULL(@sql, 'SELECT 1;');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Remove UNIQUE constraint on loan_no
+SET @sql = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND index_name = 'loan_no' 
+   AND non_unique = 0) > 0,
+  'ALTER TABLE loans DROP INDEX loan_no;',
+  'SELECT 1;'
+));
+SET @sql = IFNULL(@sql, 'SELECT 1;');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 DELIMITER $$
 --
 -- Procedures
@@ -97,6 +151,13 @@ CREATE TABLE `customers` (
   `name` varchar(100) NOT NULL,
   `mobile` varchar(15) NOT NULL,
   `address` text DEFAULT NULL,
+  `place` varchar(100) DEFAULT NULL,
+  `pincode` varchar(10) DEFAULT NULL,
+  `additional_number` varchar(15) DEFAULT NULL,
+  `reference` varchar(100) DEFAULT NULL,
+  `proof_type` varchar(50) DEFAULT NULL,
+  `customer_photo` varchar(255) DEFAULT NULL,
+  `proof_file` varchar(255) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -164,17 +225,32 @@ CREATE TABLE `interest` (
 --
 
 CREATE TABLE `loans` (
-  `id` int(11) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
   `loan_no` varchar(20) NOT NULL,
   `customer_id` int(11) NOT NULL,
   `loan_date` date NOT NULL,
   `principal_amount` decimal(10,2) NOT NULL,
   `interest_rate` decimal(5,2) NOT NULL,
+  `loan_days` int(11) DEFAULT NULL,
+  `interest_amount` decimal(10,2) DEFAULT NULL,
   `total_weight` decimal(8,3) DEFAULT NULL,
   `net_weight` decimal(8,3) DEFAULT NULL,
   `pledge_items` text DEFAULT NULL,
+  `date_of_birth` date DEFAULT NULL,
+  `group_id` int(11) DEFAULT NULL,
+  `recovery_period` varchar(50) DEFAULT NULL,
+  `ornament_file` varchar(255) DEFAULT NULL,
+  `proof_file` varchar(255) DEFAULT NULL,
   `status` enum('active','closed') DEFAULT 'active',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_loans_customer_id` (`customer_id`),
+  KEY `idx_loans_loan_no` (`loan_no`),
+  KEY `idx_loans_status` (`status`),
+  KEY `idx_loans_date` (`loan_date`),
+  KEY `idx_loans_customer_loan` (`customer_id`, `loan_no`),
+  CONSTRAINT `loans_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_loans_group` FOREIGN KEY (`group_id`) REFERENCES `groups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -375,14 +451,15 @@ ALTER TABLE `interest`
 
 --
 -- Indexes for table `loans`
+-- NOTE: NO UNIQUE constraints - allows multiple loans per customer
 --
 ALTER TABLE `loans`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `loan_no` (`loan_no`),
   ADD KEY `idx_loans_loan_no` (`loan_no`),
   ADD KEY `idx_loans_customer_id` (`customer_id`),
   ADD KEY `idx_loans_status` (`status`),
-  ADD KEY `idx_loans_date` (`loan_date`);
+  ADD KEY `idx_loans_date` (`loan_date`),
+  ADD KEY `idx_loans_customer_loan` (`customer_id`, `loan_no`);
 
 --
 -- Indexes for table `loan_closings`
@@ -418,6 +495,83 @@ ALTER TABLE `users`
 --
 
 --
+-- Add missing columns to customers table (for existing databases)
+-- Run these only if columns don't exist
+--
+SET @dbname = DATABASE();
+SET @tablename = "customers";
+
+-- Add place column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'place') > 0,
+  "SELECT 'Column place already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN place varchar(100) DEFAULT NULL AFTER address"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add pincode column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'pincode') > 0,
+  "SELECT 'Column pincode already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN pincode varchar(10) DEFAULT NULL AFTER place"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add additional_number column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'additional_number') > 0,
+  "SELECT 'Column additional_number already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN additional_number varchar(15) DEFAULT NULL AFTER pincode"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add reference column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'reference') > 0,
+  "SELECT 'Column reference already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN reference varchar(100) DEFAULT NULL AFTER additional_number"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add proof_type column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'proof_type') > 0,
+  "SELECT 'Column proof_type already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN proof_type varchar(50) DEFAULT NULL AFTER reference"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add customer_photo column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'customer_photo') > 0,
+  "SELECT 'Column customer_photo already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN customer_photo varchar(255) DEFAULT NULL AFTER proof_type"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add proof_file column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'proof_file') > 0,
+  "SELECT 'Column proof_file already exists' AS result",
+  "ALTER TABLE customers ADD COLUMN proof_file varchar(255) DEFAULT NULL AFTER customer_photo"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+--
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
@@ -434,6 +588,83 @@ ALTER TABLE `groups`
 --
 ALTER TABLE `interest`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
+-- Add missing columns to loans table (for existing databases)
+-- Run these only if columns don't exist
+--
+SET @dbname = DATABASE();
+SET @tablename = "loans";
+
+-- Add date_of_birth column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'date_of_birth') > 0,
+  "SELECT 'Column date_of_birth already exists' AS result",
+  "ALTER TABLE loans ADD COLUMN date_of_birth date DEFAULT NULL AFTER pledge_items"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add group_id column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'group_id') > 0,
+  "SELECT 'Column group_id already exists' AS result",
+  "ALTER TABLE loans ADD COLUMN group_id int(11) DEFAULT NULL AFTER date_of_birth"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add recovery_period column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'recovery_period') > 0,
+  "SELECT 'Column recovery_period already exists' AS result",
+  "ALTER TABLE loans ADD COLUMN recovery_period varchar(50) DEFAULT NULL AFTER group_id"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add ornament_file column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'ornament_file') > 0,
+  "SELECT 'Column ornament_file already exists' AS result",
+  "ALTER TABLE loans ADD COLUMN ornament_file varchar(255) DEFAULT NULL AFTER recovery_period"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add proof_file column
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = @dbname AND table_name = @tablename AND column_name = 'proof_file') > 0,
+  "SELECT 'Column proof_file already exists' AS result",
+  "ALTER TABLE loans ADD COLUMN proof_file varchar(255) DEFAULT NULL AFTER ornament_file"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add index for group_id if it doesn't exist
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema = @dbname AND table_name = @tablename AND index_name = 'idx_group_id') > 0,
+  "SELECT 'Index idx_group_id already exists' AS result",
+  "ALTER TABLE loans ADD INDEX idx_group_id (group_id)"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add foreign key for group_id if it doesn't exist
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE table_schema = @dbname AND table_name = @tablename AND constraint_name = 'fk_loans_group') > 0,
+  "SELECT 'Foreign key fk_loans_group already exists' AS result",
+  "ALTER TABLE loans ADD CONSTRAINT fk_loans_group FOREIGN KEY (group_id) REFERENCES groups(id)"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 --
 -- AUTO_INCREMENT for table `loans`
@@ -478,8 +709,76 @@ ALTER TABLE `interest`
 --
 -- Constraints for table `loans`
 --
-ALTER TABLE `loans`
-  ADD CONSTRAINT `loans_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`);
+-- CRITICAL: Remove ALL UNIQUE constraints to allow multiple loans per customer
+-- This must be done before adding foreign keys to avoid constraint violations
+SET @dbname = DATABASE();
+
+-- Step 1: Remove unique_customer_loan constraint (composite unique on customer_id, loan_no)
+-- Try multiple methods to ensure it's removed
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND index_name = 'unique_customer_loan') > 0,
+  "ALTER TABLE loans DROP INDEX unique_customer_loan",
+  "SELECT 'UNIQUE constraint unique_customer_loan does not exist' AS result"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Also try DROP KEY as alternative
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND constraint_name = 'unique_customer_loan') > 0,
+  "ALTER TABLE loans DROP KEY unique_customer_loan",
+  "SELECT 'Constraint unique_customer_loan does not exist' AS result"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Step 2: Remove UNIQUE constraint on loan_no (single column unique)
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND index_name = 'loan_no' 
+   AND non_unique = 0) > 0,
+  "ALTER TABLE loans DROP INDEX loan_no",
+  "SELECT 'UNIQUE constraint on loan_no does not exist' AS result"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add composite index for customer_id and loan_no (for faster queries, but not unique)
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND index_name = 'idx_loans_customer_loan') > 0,
+  "SELECT 'Index idx_loans_customer_loan already exists' AS result",
+  "ALTER TABLE loans ADD INDEX idx_loans_customer_loan (customer_id, loan_no)"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Ensure foreign key constraint exists (only if it doesn't already exist)
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+   WHERE table_schema = @dbname 
+   AND table_name = 'loans' 
+   AND constraint_name = 'loans_ibfk_1') > 0,
+  "SELECT 'Foreign key loans_ibfk_1 already exists' AS result",
+  "ALTER TABLE loans ADD CONSTRAINT loans_ibfk_1 FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE CASCADE"
+));
+PREPARE stmt FROM @preparedStatement;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 --
 -- Constraints for table `loan_closings`
@@ -492,7 +791,95 @@ ALTER TABLE `loan_closings`
 --
 ALTER TABLE `products`
   ADD CONSTRAINT `products_ibfk_1` FOREIGN KEY (`group_id`) REFERENCES `groups` (`id`) ON DELETE SET NULL;
+
+--
+-- ============================================================================
+-- EXAMPLE INSERT STATEMENTS: Multiple Loans Per Customer
+-- ============================================================================
+-- These examples demonstrate that customers can have multiple loans
+-- without encountering duplicate key errors.
+--
+-- IMPORTANT: The UNIQUE constraint on loan_no has been removed.
+-- Each loan is uniquely identified by its auto-increment 'id' field.
+-- The 'customer_id' foreign key maintains the relationship to customers.
+-- ============================================================================
+--
+
+-- Example 1: Customer with 3 active loans
+-- Step 1: Insert customer
+-- INSERT INTO `customers` (`customer_no`, `name`, `mobile`, `address`, `place`) VALUES
+-- ('C0001', 'John Doe', '9876543210', '123 Main Street', 'Chennai');
+
+-- Step 2: Insert multiple loans for the same customer
+-- INSERT INTO `loans` (`loan_no`, `customer_id`, `loan_date`, `principal_amount`, `interest_rate`, `loan_days`, `status`) VALUES
+-- ('A0001', 1, '2025-01-15', 10000.00, 12.00, 30, 'active'),
+-- ('A0002', 1, '2025-02-20', 15000.00, 12.00, 60, 'active'),
+-- ('A0003', 1, '2025-03-10', 20000.00, 12.00, 90, 'active');
+
+-- Example 2: Another customer with 2 loans
+-- Step 1: Insert customer
+-- INSERT INTO `customers` (`customer_no`, `name`, `mobile`, `address`, `place`) VALUES
+-- ('C0002', 'Jane Smith', '9876543211', '456 Oak Avenue', 'Bangalore');
+
+-- Step 2: Insert multiple loans for this customer
+-- INSERT INTO `loans` (`loan_no`, `customer_id`, `loan_date`, `principal_amount`, `interest_rate`, `loan_days`, `status`) VALUES
+-- ('A0004', 2, '2025-01-20', 5000.00, 10.00, 30, 'active'),
+-- ('A0005', 2, '2025-02-25', 8000.00, 10.00, 45, 'active');
+
+-- Example 3: Customer with mixed active and closed loans
+-- INSERT INTO `loans` (`loan_no`, `customer_id`, `loan_date`, `principal_amount`, `interest_rate`, `loan_days`, `status`) VALUES
+-- ('A0006', 1, '2024-12-01', 5000.00, 12.00, 30, 'closed'),
+-- ('A0007', 1, '2025-04-01', 12000.00, 12.00, 60, 'active');
+
+--
+-- Database Schema Notes:
+-- ======================
+-- 1. PRIMARY KEY: The 'id' field is the primary key and auto-increments,
+--    ensuring each loan record is unique.
+--
+-- 2. FOREIGN KEY: The 'customer_id' field references customers(id),
+--    establishing the one-to-many relationship (one customer, many loans).
+--
+-- 3. LOAN_NO: The 'loan_no' field is NOT unique, allowing:
+--    - Multiple customers to have loans with the same loan number
+--    - The same customer to have multiple loans (even with same loan_no if needed)
+--
+-- 4. INDEXES: Composite index on (customer_id, loan_no) improves query
+--    performance when filtering loans by customer.
+--
+-- 5. DATA INTEGRITY: Foreign key constraints ensure referential integrity
+--    between customers and loans tables.
+--
+
 COMMIT;
+-- Quick SQL Fix: Remove unique_customer_loan constraint
+-- Run this SQL file in phpMyAdmin or MySQL command line to fix the duplicate entry error
+
+USE `lakshmi_finance`;
+
+-- Method 1: Try DROP INDEX
+ALTER TABLE `loans` DROP INDEX IF EXISTS `unique_customer_loan`;
+
+-- Method 2: Try DROP KEY (alternative syntax)
+ALTER TABLE `loans` DROP KEY IF EXISTS `unique_customer_loan`;
+
+-- Method 3: Remove UNIQUE constraint on loan_no if it exists
+ALTER TABLE `loans` DROP INDEX IF EXISTS `loan_no`;
+
+-- Verify the constraint is removed
+SELECT 
+    index_name, 
+    non_unique,
+    GROUP_CONCAT(column_name ORDER BY seq_in_index) as columns
+FROM INFORMATION_SCHEMA.STATISTICS 
+WHERE table_schema = 'lakshmi_finance' 
+AND table_name = 'loans' 
+AND non_unique = 0
+AND index_name != 'PRIMARY'
+GROUP BY index_name, non_unique;
+
+-- If the above query returns no rows, the constraint has been successfully removed!
+
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;

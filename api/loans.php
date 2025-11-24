@@ -4,8 +4,45 @@ header('Content-Type: application/json');
 $basePath = dirname(__DIR__);
 require_once $basePath . '/config/database.php';
 
+// Function to ensure database columns exist
+function ensureLoanColumns($pdo) {
+    $columns = [
+        'date_of_birth' => 'DATE DEFAULT NULL',
+        'group_id' => 'INT(11) DEFAULT NULL',
+        'recovery_period' => 'VARCHAR(50) DEFAULT NULL',
+        'ornament_file' => 'VARCHAR(255) DEFAULT NULL',
+        'proof_file' => 'VARCHAR(255) DEFAULT NULL',
+        'loan_days' => 'INT DEFAULT NULL',
+        'interest_amount' => 'DECIMAL(10,2) DEFAULT NULL'
+    ];
+    
+    foreach ($columns as $column => $type) {
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM loans LIKE '$column'");
+            if ($stmt->rowCount() == 0) {
+                $pdo->exec("ALTER TABLE loans ADD COLUMN $column $type");
+            }
+        } catch(PDOException $e) {
+            // Column might already exist or table doesn't exist yet, ignore
+        }
+    }
+    
+    // Add index for group_id if it doesn't exist
+    try {
+        $stmt = $pdo->query("SHOW INDEX FROM loans WHERE Key_name = 'idx_group_id'");
+        if ($stmt->rowCount() == 0) {
+            $pdo->exec("ALTER TABLE loans ADD INDEX idx_group_id (group_id)");
+        }
+    } catch(PDOException $e) {
+        // Index might already exist, ignore
+    }
+}
+
 try {
     $pdo = getDBConnection();
+    
+    // Ensure all required columns exist
+    ensureLoanColumns($pdo);
     
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Add new loan
@@ -17,19 +54,25 @@ try {
         $totalWeight = $_POST['total_weight'] ?? null;
         $netWeight = $_POST['net_weight'] ?? null;
         $pledgeItems = $_POST['pledge_items'] ?? '';
+        $dateOfBirth = $_POST['date_of_birth'] ?? null;
+        $groupId = $_POST['group_id'] ?? null;
+        $recoveryPeriod = $_POST['recovery_period'] ?? null;
+        $loanDays = $_POST['loan_days'] ?? null;
+        $interestAmount = $_POST['interest_amount'] ?? null;
         
-        if (empty($loanNo) || empty($customerId) || empty($loanDate) || empty($principalAmount) || empty($interestRate)) {
+        if (empty($loanNo) || empty($customerId) || empty($loanDate) || empty($principalAmount) || empty($interestRate) || empty($loanDays)) {
             echo json_encode(['success' => false, 'message' => 'Required fields are missing']);
             exit();
         }
         
-        // Check if loan number already exists
-        $stmt = $pdo->prepare("SELECT id FROM loans WHERE loan_no = ?");
-        $stmt->execute([$loanNo]);
-        if ($stmt->fetch()) {
-            echo json_encode(['success' => false, 'message' => 'Loan number already exists']);
-            exit();
+        // Calculate interest amount if not provided
+        // Formula: Principal × (Interest Rate / 100) × (Days / 365)
+        if (empty($interestAmount) && !empty($principalAmount) && !empty($interestRate) && !empty($loanDays)) {
+            $interestAmount = $principalAmount * ($interestRate / 100) * ($loanDays / 365);
         }
+        
+        // Note: Loan number uniqueness check removed - customers can have multiple loans
+        // Each loan is uniquely identified by its auto-increment 'id' field
         
         // Check if customer exists
         $stmt = $pdo->prepare("SELECT id FROM customers WHERE id = ?");
@@ -39,38 +82,262 @@ try {
             exit();
         }
         
+        // Handle file uploads - organize by customer name folder
+        $ornamentFile = '';
+        $proofFile = '';
+        
+        // Get customer name to create folder structure
+        $stmt = $pdo->prepare("SELECT name FROM customers WHERE id = ?");
+        $stmt->execute([$customerId]);
+        $customer = $stmt->fetch();
+        
+        if ($customer) {
+            // Sanitize customer name for folder name
+            $customerFolderName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $customer['name']);
+            $customerFolderName = str_replace(' ', '_', $customerFolderName);
+            $customerFolderName = strtolower($customerFolderName);
+            
+            // Create customer-specific upload directory
+            $uploadDir = $basePath . '/uploads/' . $customerFolderName . '/';
+            
+            // Create upload directory if it doesn't exist
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            
+            // Handle ornament file upload
+            if (isset($_FILES['ornament_file']) && $_FILES['ornament_file']['error'] === UPLOAD_ERR_OK) {
+                $ornamentFileUpload = $_FILES['ornament_file'];
+                $ornamentExtension = pathinfo($ornamentFileUpload['name'], PATHINFO_EXTENSION);
+                $ornamentFileName = 'loan_' . $loanNo . '_ornament_' . time() . '.' . $ornamentExtension;
+                $ornamentPath = $uploadDir . $ornamentFileName;
+                
+                // Validate file type (images and PDF)
+                $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+                if (in_array($ornamentFileUpload['type'], $allowedTypes)) {
+                    if (move_uploaded_file($ornamentFileUpload['tmp_name'], $ornamentPath)) {
+                        $ornamentFile = 'uploads/' . $customerFolderName . '/' . $ornamentFileName;
+                    }
+                }
+            }
+            
+            // Handle proof file upload
+            if (isset($_FILES['proof_file']) && $_FILES['proof_file']['error'] === UPLOAD_ERR_OK) {
+                $proofFileUpload = $_FILES['proof_file'];
+                $proofExtension = pathinfo($proofFileUpload['name'], PATHINFO_EXTENSION);
+                $proofFileName = 'loan_' . $loanNo . '_proof_' . time() . '.' . $proofExtension;
+                $proofPath = $uploadDir . $proofFileName;
+                
+                // Validate file type (images and PDF)
+                $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+                if (in_array($proofFileUpload['type'], $allowedTypes)) {
+                    if (move_uploaded_file($proofFileUpload['tmp_name'], $proofPath)) {
+                        $proofFile = 'uploads/' . $customerFolderName . '/' . $proofFileName;
+                    }
+                }
+            }
+        }
+        
         // Insert new loan
         $stmt = $pdo->prepare("
-            INSERT INTO loans (loan_no, customer_id, loan_date, principal_amount, interest_rate, total_weight, net_weight, pledge_items) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO loans (loan_no, customer_id, loan_date, principal_amount, interest_rate, loan_days, interest_amount, total_weight, net_weight, pledge_items, date_of_birth, group_id, recovery_period, ornament_file, proof_file) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$loanNo, $customerId, $loanDate, $principalAmount, $interestRate, $totalWeight, $netWeight, $pledgeItems]);
+        $stmt->execute([
+            $loanNo, 
+            $customerId, 
+            $loanDate, 
+            $principalAmount, 
+            $interestRate,
+            $loanDays ?: null,
+            $interestAmount ?: null,
+            $totalWeight, 
+            $netWeight, 
+            $pledgeItems,
+            $dateOfBirth ?: null,
+            $groupId ?: null,
+            $recoveryPeriod ?: null,
+            $ornamentFile ?: null,
+            $proofFile ?: null
+        ]);
         
         echo json_encode(['success' => true, 'message' => 'Loan added successfully']);
+        
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Get single loan by ID if id parameter is provided (for editing)
+        $id = $_GET['id'] ?? '';
+        if (!empty($id)) {
+            try {
+                $stmt = $pdo->prepare("SELECT * FROM loans WHERE id = ?");
+                $stmt->execute([$id]);
+                $loan = $stmt->fetch();
+                
+                if ($loan) {
+                    echo json_encode(['success' => true, 'loan' => $loan]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Loan not found']);
+                }
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            exit();
+        }
+        
+        // Get next loan number if action is get_next_number
+        $action = $_GET['action'] ?? '';
+        
+        if ($action === 'get_next_number') {
+            // Get the highest loan number
+            $stmt = $pdo->query("SELECT loan_no FROM loans ORDER BY CAST(SUBSTRING(loan_no, 2) AS UNSIGNED) DESC LIMIT 1");
+            $lastLoan = $stmt->fetch();
+            
+            if ($lastLoan) {
+                // Extract number from loan_no (e.g., A0004 -> 4)
+                $lastNumber = intval(substr($lastLoan['loan_no'], 1));
+                $nextNumber = $lastNumber + 1;
+                $nextLoanNo = 'A' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            } else {
+                // No loans yet, start with A0001
+                $nextLoanNo = 'A0001';
+            }
+            
+            echo json_encode(['success' => true, 'loan_no' => $nextLoanNo]);
+            exit();
+        }
+        
+        // Get customer details by ID
+        if ($action === 'get_customer') {
+            $customerId = $_GET['customer_id'] ?? '';
+            if (empty($customerId)) {
+                echo json_encode(['success' => false, 'message' => 'customer_id is required']);
+                exit();
+            }
+            try {
+                $stmt = $pdo->prepare("SELECT * FROM customers WHERE id = ?");
+                $stmt->execute([$customerId]);
+                $customer = $stmt->fetch();
+                
+                if ($customer) {
+                    echo json_encode(['success' => true, 'customer' => $customer]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Customer not found']);
+                }
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            exit();
+        }
+        
+        // Get active loans for dropdown
+        // Show ALL active loans (no deduplication - each loan has unique id)
+        if ($action === 'get_active_loans') {
+            try {
+                $stmt = $pdo->query("
+                    SELECT 
+                        l.id, 
+                        l.loan_no, 
+                        c.name AS customer_name, 
+                        l.principal_amount,
+                        COALESCE(i.total_interest_paid, 0) AS total_interest_paid
+                    FROM loans l
+                    JOIN customers c ON l.customer_id = c.id
+                    LEFT JOIN (
+                        SELECT loan_id, SUM(interest_amount) AS total_interest_paid
+                        FROM interest
+                        GROUP BY loan_id
+                    ) i ON i.loan_id = l.id
+                    WHERE l.status = 'active'
+                    ORDER BY l.loan_date DESC, l.id DESC
+                ");
+                $activeLoans = $stmt->fetchAll();
+                
+                echo json_encode(['success' => true, 'loans' => $activeLoans]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            exit();
+        } elseif ($action === 'by_customer') {
+            // Return ALL loans for a given customer id (no deduplication - each loan has unique id)
+            $customerId = $_GET['customer_id'] ?? '';
+            if (empty($customerId)) {
+                echo json_encode(['success' => false, 'message' => 'customer_id is required']);
+                exit();
+            }
+            try {
+                // Get ALL loans for customer (no deduplication - each loan has unique id)
+                // Include all necessary fields for proper data fetching
+                $stmt = $pdo->prepare("
+                    SELECT 
+                        l.id, 
+                        l.loan_no, 
+                        l.status, 
+                        l.loan_date, 
+                        l.principal_amount, 
+                        l.interest_rate,
+                        l.customer_id,
+                        l.loan_days,
+                        l.interest_amount,
+                        DATE_FORMAT(l.loan_date, '%Y-%m-%d') as loan_date_iso
+                    FROM loans l
+                    WHERE l.customer_id = ? 
+                    ORDER BY l.loan_date DESC, l.id DESC
+                ");
+                $stmt->execute([$customerId]);
+                $allLoans = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                echo json_encode(['success' => true, 'loans' => $allLoans]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            exit();
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid action']);
+        }
         
     } elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         // Update loan
         parse_str(file_get_contents("php://input"), $data);
         
         $id = $data['id'] ?? '';
+        $customerId = $data['customer_id'] ?? '';
+        $loanDate = $data['loan_date'] ?? '';
         $principalAmount = $data['principal_amount'] ?? '';
         $interestRate = $data['interest_rate'] ?? '';
+        $loanDays = $data['loan_days'] ?? null;
+        $interestAmount = $data['interest_amount'] ?? null;
         $totalWeight = $data['total_weight'] ?? null;
         $netWeight = $data['net_weight'] ?? null;
         $pledgeItems = $data['pledge_items'] ?? '';
         $status = $data['status'] ?? 'active';
         
-        if (empty($id) || empty($principalAmount) || empty($interestRate)) {
+        if (empty($id) || empty($customerId) || empty($loanDate) || empty($principalAmount) || empty($interestRate) || empty($loanDays)) {
             echo json_encode(['success' => false, 'message' => 'Required fields are missing']);
             exit();
         }
         
+        // Calculate interest amount if not provided
+        if (empty($interestAmount) && !empty($principalAmount) && !empty($interestRate) && !empty($loanDays)) {
+            $interestAmount = ($principalAmount * $interestRate * $loanDays) / 100;
+        }
+        
         $stmt = $pdo->prepare("
             UPDATE loans 
-            SET principal_amount = ?, interest_rate = ?, total_weight = ?, net_weight = ?, pledge_items = ?, status = ? 
+            SET customer_id = ?, loan_date = ?, principal_amount = ?, interest_rate = ?, loan_days = ?, interest_amount = ?, total_weight = ?, net_weight = ?, pledge_items = ?, status = ? 
             WHERE id = ?
         ");
-        $stmt->execute([$principalAmount, $interestRate, $totalWeight, $netWeight, $pledgeItems, $status, $id]);
+        $stmt->execute([
+            $customerId, 
+            $loanDate, 
+            $principalAmount, 
+            $interestRate, 
+            $loanDays ?: null,
+            $interestAmount ?: null,
+            $totalWeight, 
+            $netWeight, 
+            $pledgeItems, 
+            $status, 
+            $id
+        ]);
         
         echo json_encode(['success' => true, 'message' => 'Loan updated successfully']);
         
@@ -80,6 +347,16 @@ try {
         
         if (empty($id)) {
             echo json_encode(['success' => false, 'message' => 'Loan ID is required']);
+            exit();
+        }
+        
+        // Get loan details before deletion
+        $stmt = $pdo->prepare("SELECT l.*, c.name as customer_name FROM loans l JOIN customers c ON l.customer_id = c.id WHERE l.id = ?");
+        $stmt->execute([$id]);
+        $loan = $stmt->fetch();
+        
+        if (!$loan) {
+            echo json_encode(['success' => false, 'message' => 'Loan not found']);
             exit();
         }
         
@@ -93,6 +370,28 @@ try {
             exit();
         }
         
+        // Delete loan files from customer folder
+        $customerFolderName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $loan['customer_name']);
+        $customerFolderName = str_replace(' ', '_', $customerFolderName);
+        $customerFolderName = strtolower($customerFolderName);
+        
+        // Delete ornament file
+        if (!empty($loan['ornament_file'])) {
+            $ornamentPath = $basePath . '/' . $loan['ornament_file'];
+            if (file_exists($ornamentPath)) {
+                unlink($ornamentPath);
+            }
+        }
+        
+        // Delete proof file
+        if (!empty($loan['proof_file'])) {
+            $proofPath = $basePath . '/' . $loan['proof_file'];
+            if (file_exists($proofPath)) {
+                unlink($proofPath);
+            }
+        }
+        
+        // Delete loan from database
         $stmt = $pdo->prepare("DELETE FROM loans WHERE id = ?");
         $stmt->execute([$id]);
         

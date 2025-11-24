@@ -336,7 +336,10 @@ try {
 
 <!-- Hidden form to POST to PDF generator -->
 <form id="fpdfLoanForm" action="api/loan-pdf-generator.php" method="POST" target="_blank" style="display:none">
+    <input type="hidden" name="loan_id" id="fpdfLoanId">
     <input type="hidden" name="loan_no" id="fpdfLoanNo">
+    <input type="hidden" name="customer_id" id="fpdfCustomerId">
+    <input type="hidden" name="loan_date" id="fpdfLoanDate">
 </form>
 
 <script>
@@ -362,25 +365,17 @@ if (pdfCustomerSelect && !pdfCustomerSelect.dataset.listenerAttached) {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && Array.isArray(data.loans)) {
-                        // Deduplicate by loan_no to ensure each loan number appears only once
-                        const seenLoanNos = new Set();
-                        const uniqueLoans = [];
-                        
+                        // Show ALL loans (no deduplication - each loan has unique id)
+                        // Display format: Loan No (Date) - Status - Principal Amount
                         data.loans.forEach(loan => {
-                            const loanNo = String(loan.loan_no || '').trim();
-                            if (loanNo && !seenLoanNos.has(loanNo)) {
-                                seenLoanNos.add(loanNo);
-                                uniqueLoans.push(loan);
-                            }
-                        });
-                        
-                        // Add unique loans to dropdown
-                        uniqueLoans.forEach(loan => {
                             const option = document.createElement('option');
-                            option.value = loan.id;
+                            option.value = loan.id; // Use loan ID (unique)
+                            option.setAttribute('data-loan-id', loan.id);
                             option.setAttribute('data-loan-no', loan.loan_no || '');
+                            option.setAttribute('data-loan-date', loan.loan_date || '');
                             const date = loan.loan_date ? new Date(loan.loan_date).toLocaleDateString('en-GB') : '';
-                            option.textContent = `${loan.loan_no} (${date}) - ${loan.status}`;
+                            const principal = loan.principal_amount ? `₹${parseFloat(loan.principal_amount).toLocaleString('en-IN')}` : '';
+                            option.textContent = `${loan.loan_no} (${date}) - ${loan.status || 'active'} ${principal ? '- ' + principal : ''}`;
                             loanSelect.appendChild(option);
                         });
                     }
@@ -416,14 +411,25 @@ function loadPdfCustomers() {
 
 function viewLoanPdf() {
     const loanSelect = document.getElementById('pdfLoan');
-    const loanNo = loanSelect.options[loanSelect.selectedIndex]?.getAttribute('data-loan-no');
+    const customerSelect = document.getElementById('pdfCustomer');
+    const selectedOption = loanSelect.options[loanSelect.selectedIndex];
     
-    if (!loanNo) {
+    if (!selectedOption || !selectedOption.value) {
         alert('Please select a loan');
         return;
     }
     
+    // Use loan_id (unique) as primary identifier, loan_no as fallback
+    const loanId = selectedOption.getAttribute('data-loan-id') || selectedOption.value;
+    const loanNo = selectedOption.getAttribute('data-loan-no') || '';
+    const loanDate = selectedOption.getAttribute('data-loan-date') || '';
+    const customerId = customerSelect ? customerSelect.value : '';
+    
+    // Set all form values for accurate loan fetching
+    document.getElementById('fpdfLoanId').value = loanId;
     document.getElementById('fpdfLoanNo').value = loanNo;
+    document.getElementById('fpdfCustomerId').value = customerId;
+    document.getElementById('fpdfLoanDate').value = loanDate;
     document.getElementById('fpdfLoanForm').submit();
 }
 

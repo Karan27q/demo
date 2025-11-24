@@ -37,3 +37,16 @@ User found: Array
 )
 
 Hash for admin123: $2y$10$LMojHv2meGTuL4iQF8Wp4ubYXgHJkOYJ8jvR3OX5tCZ1WONILOaBa
+Username: admin
+User found: Array
+(
+    [id] => 0
+    [username] => Admin
+    [password] => $2y$10$oIVZYG/mxI9Yzkb8D6oqROeC9agwCutcboU5ho.iVO/uebCs3XE6e
+    [name] => Admin
+    [email] => Admin@gmail.com
+    [role] => admin
+    [created_at] => 2025-09-19 10:29:41
+)
+
+Hash for admin123: $2y$10$fQAydkez/X75SZLyQ5IxV./6dDmIHHqoX6EiRyV0V0d4aHm/.Aatq
