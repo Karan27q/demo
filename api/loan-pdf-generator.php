@@ -47,6 +47,7 @@ try {
                 c.customer_no,
                 c.additional_number,
                 c.reference,
+                c.customer_photo,
                 DATE_FORMAT(l.loan_date, '%d-%m-%Y') as formatted_loan_date,
                 DATE_FORMAT(l.loan_date, '%Y-%m-%d') as loan_date_iso
             FROM loans l
@@ -74,6 +75,7 @@ try {
                     c.customer_no,
                     c.additional_number,
                     c.reference,
+                    c.customer_photo,
                     DATE_FORMAT(l.loan_date, '%d-%m-%Y') as formatted_loan_date,
                     DATE_FORMAT(l.loan_date, '%Y-%m-%d') as loan_date_iso
                 FROM loans l
@@ -100,6 +102,7 @@ try {
                     c.customer_no,
                     c.additional_number,
                     c.reference,
+                    c.customer_photo,
                     DATE_FORMAT(l.loan_date, '%d-%m-%Y') as formatted_loan_date,
                     DATE_FORMAT(l.loan_date, '%Y-%m-%d') as loan_date_iso
                 FROM loans l
@@ -149,6 +152,50 @@ try {
         ? number_format(floatval($loan["interest_rate"]), 2, '.', '') 
         : "1.00";
     
+    // Get customer photo path
+    $basePath = dirname(__DIR__);
+    $customerPhotoPath = null;
+    
+    if (!empty($loan["customer_photo"])) {
+        // Check if photo path exists in database
+        $photoPath = $basePath . '/' . $loan["customer_photo"];
+        if (file_exists($photoPath)) {
+            $customerPhotoPath = $photoPath;
+        }
+    }
+    
+    // If photo not found in database path, try to find it by customer folder name
+    if (empty($customerPhotoPath)) {
+        $customerFolderName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $loan["customer_name"]);
+        $customerFolderName = str_replace(' ', '_', $customerFolderName);
+        $customerFolderName = strtolower($customerFolderName);
+        
+        // Try different extensions
+        $extensions = ['jpg', 'jpeg', 'png', 'gif'];
+        foreach ($extensions as $ext) {
+            $possiblePhotoPath = $basePath . '/uploads/' . $customerFolderName . '/customer_photo.' . $ext;
+            if (file_exists($possiblePhotoPath)) {
+                $customerPhotoPath = $possiblePhotoPath;
+                break;
+            }
+        }
+    }
+    
+    // Get ornament photo path
+    $ornamentPhotoPath = null;
+    
+    if (!empty($loan["ornament_file"])) {
+        // Check if ornament file path exists in database
+        $ornamentPath = $basePath . '/' . $loan["ornament_file"];
+        if (file_exists($ornamentPath)) {
+            // Check if it's an image file (not PDF)
+            $ornamentExtension = strtolower(pathinfo($ornamentPath, PATHINFO_EXTENSION));
+            if (in_array($ornamentExtension, ['jpg', 'jpeg', 'png', 'gif'])) {
+                $ornamentPhotoPath = $ornamentPath;
+            }
+        }
+    }
+    
     // Continue with PDF generation using the existing template
     date_default_timezone_set('Asia/Kolkata');
     $currentDate = date('Y-m-d');
@@ -173,16 +220,189 @@ try {
     
             $pdf->SetTextColor(0, 0, 0);
     
+            // Insert customer photo on the left side, centered
+            if (!empty($customerPhotoPath)) {
+                try {
+                    // Photo position: left side, centered vertically
+                    // Fixed size for customer photo
+                    $photoX = 80;  // Left side position (in points)
+                    $photoY = 43;  // Top position for photo (in points)
+                    $photoWidth = 35;  // Fixed width in points
+                    $photoHeight = 35; // Fixed height in points
+                    
+                    // Get image and handle EXIF orientation to auto-rotate
+                    $imageExtension = strtolower(pathinfo($customerPhotoPath, PATHINFO_EXTENSION));
+                    $tempImagePath = null;
+                    
+                    if (in_array($imageExtension, ['jpg', 'jpeg', 'png', 'gif'])) {
+                        // Check if GD library is available for image manipulation
+                        if (function_exists('imagecreatefromjpeg') && function_exists('imagerotate')) {
+                            // Read EXIF data for orientation (only works for JPEG)
+                            $orientation = 1; // Default: no rotation
+                            if (in_array($imageExtension, ['jpg', 'jpeg']) && function_exists('exif_read_data')) {
+                                $exif = @exif_read_data($customerPhotoPath);
+                                if (!empty($exif['Orientation'])) {
+                                    $orientation = $exif['Orientation'];
+                                }
+                            }
+                            
+                            // Load image based on type
+                            $sourceImage = null;
+                            switch ($imageExtension) {
+                                case 'jpg':
+                                case 'jpeg':
+                                    $sourceImage = @imagecreatefromjpeg($customerPhotoPath);
+                                    break;
+                                case 'png':
+                                    $sourceImage = @imagecreatefrompng($customerPhotoPath);
+                                    break;
+                                case 'gif':
+                                    $sourceImage = @imagecreatefromgif($customerPhotoPath);
+                                    break;
+                            }
+                            
+                            if ($sourceImage) {
+                            $width = imagesx($sourceImage);
+                            $height = imagesy($sourceImage);
+                            
+                            // Apply rotation based on EXIF orientation
+                            $rotatedImage = $sourceImage;
+                            $angle = 0;
+                            $flip = false;
+                            
+                            switch ($orientation) {
+                                case 3: // 180 degrees
+                                    $angle = 180;
+                                    break;
+                                case 6: // 90 degrees clockwise (rotate -90 or 270)
+                                    $angle = -90;
+                                    $temp = $width;
+                                    $width = $height;
+                                    $height = $temp;
+                                    break;
+                                case 8: // 90 degrees counter-clockwise (rotate 90)
+                                    $angle = 90;
+                                    $temp = $width;
+                                    $width = $height;
+                                    $height = $temp;
+                                    break;
+                            }
+                            
+                            // Rotate image if needed
+                            if ($angle != 0) {
+                                $rotatedImage = imagerotate($sourceImage, $angle, 0);
+                                imagedestroy($sourceImage);
+                            }
+                            
+                            // Create temporary file for rotated image
+                            $tempImagePath = sys_get_temp_dir() . '/customer_photo_' . uniqid() . '.jpg';
+                            
+                            // Save rotated image
+                            imagejpeg($rotatedImage, $tempImagePath, 90);
+                            imagedestroy($rotatedImage);
+                            
+                            // Calculate aspect ratio for fixed size box
+                            $aspectRatio = $width / $height;
+                            
+                            // Adjust dimensions to fit in fixed box while maintaining aspect ratio
+                            $finalWidth = $photoWidth;
+                            $finalHeight = $photoHeight;
+                            
+                            if ($aspectRatio > ($photoWidth / $photoHeight)) {
+                                // Image is wider, fit to width
+                                $finalHeight = $photoWidth / $aspectRatio;
+                            } else {
+                                // Image is taller, fit to height
+                                $finalWidth = $photoHeight * $aspectRatio;
+                            }
+                            
+                            // Center the image in the fixed box
+                            $offsetX = $photoX + (($photoWidth - $finalWidth) / 2);
+                            $offsetY = $photoY + (($photoHeight - $finalHeight) / 2);
+                            
+                            // Insert the corrected image
+                            $pdf->Image($tempImagePath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                            
+                            // Clean up temporary file
+                            if (file_exists($tempImagePath)) {
+                                @unlink($tempImagePath);
+                            }
+                            } else {
+                                // Fallback: use original image if GD loading fails
+                                $imageInfo = @getimagesize($customerPhotoPath);
+                                if ($imageInfo !== false) {
+                                    $imgWidth = $imageInfo[0];
+                                    $imgHeight = $imageInfo[1];
+                                    $aspectRatio = $imgWidth / $imgHeight;
+                                    
+                                    $finalWidth = $photoWidth;
+                                    $finalHeight = $photoHeight;
+                                    
+                                    if ($aspectRatio > ($photoWidth / $photoHeight)) {
+                                        $finalHeight = $photoWidth / $aspectRatio;
+                                    } else {
+                                        $finalWidth = $photoHeight * $aspectRatio;
+                                    }
+                                    
+                                    $offsetX = $photoX + (($photoWidth - $finalWidth) / 2);
+                                    $offsetY = $photoY + (($photoHeight - $finalHeight) / 2);
+                                    
+                                    $pdf->Image($customerPhotoPath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                                }
+                            }
+                        } else {
+                            // GD library not available - use original image without rotation
+                            $imageInfo = @getimagesize($customerPhotoPath);
+                            if ($imageInfo !== false) {
+                                $imgWidth = $imageInfo[0];
+                                $imgHeight = $imageInfo[1];
+                                $aspectRatio = $imgWidth / $imgHeight;
+                                
+                                $finalWidth = $photoWidth;
+                                $finalHeight = $photoHeight;
+                                
+                                if ($aspectRatio > ($photoWidth / $photoHeight)) {
+                                    $finalHeight = $photoWidth / $aspectRatio;
+                                } else {
+                                    $finalWidth = $photoHeight * $aspectRatio;
+                                }
+                                
+                                $offsetX = $photoX + (($photoWidth - $finalWidth) / 2);
+                                $offsetY = $photoY + (($photoHeight - $finalHeight) / 2);
+                                
+                                $pdf->Image($customerPhotoPath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    // If image insertion fails, continue without photo
+                    error_log("Failed to insert customer photo: " . $e->getMessage());
+                }
+            }
+    
             // Date (use loan date if available, otherwise current date)
+            // Position to the right of the photo
             $pdf->SetFont('Arial', 'B', 9);
             $displayDate = !empty($loan["formatted_loan_date"]) 
                 ? $loan["formatted_loan_date"] 
-                : $currentDate;
-            $pdf->Text(32, 46, $displayDate);
-    
-            //Name
+                : date('d-m-Y', strtotime($currentDate));
+            // Position date to the right of photo (photo ends around x=50, so start at x=55)
+            $pdf->Text(35, 46, $displayDate);
+            
+            // Extract year from date for display
+            $year = '';
+            if (!empty($loan["formatted_loan_date"])) {
+                $dateParts = explode('-', $loan["formatted_loan_date"]);
+                if (count($dateParts) == 3) {
+                    $year = $dateParts[2]; // Format is dd-mm-yyyy
+                }
+            } 
+            // Display year below date
+           
+            //Name - Position to the right of the photo
             $pdf->SetFont('Arial', 'B', 9);
-            $pdf->Text(34, 57, $loan["customer_name"]);
+            // Position name to the right of photo, slightly below date
+            $pdf->Text(35, 57, $loan["customer_name"]);
     
             //Amount lent
             $pdf->SetFont('Arial', 'B', 7);
@@ -233,6 +453,180 @@ try {
             //Contact Number
             $pdf->SetFont('Arial', 'B', 9);
             $pdf->Text(66, 147, $loan["mobile"]);
+    
+            // Insert ornament photo in the customer details section (small fixed size in box)
+            if (!empty($ornamentPhotoPath)) {
+                try {
+                    // Ornament photo position: right side of customer details section
+                    // Small fixed size box
+                    $ornamentX = 120;  // Right side position (in points)
+                    $ornamentY = 121;  // Top position for ornament photo (in points)
+                    $ornamentWidth = 33;  // Fixed width in points (small box)
+                    $ornamentHeight = 33; // Fixed height in points (small box)
+                    
+                    // Get image and handle EXIF orientation to auto-rotate
+                    $imageExtension = strtolower(pathinfo($ornamentPhotoPath, PATHINFO_EXTENSION));
+                    $tempOrnamentImagePath = null;
+                    
+                    if (in_array($imageExtension, ['jpg', 'jpeg', 'png', 'gif'])) {
+                        // Check if GD library is available for image manipulation
+                        if (function_exists('imagecreatefromjpeg') && function_exists('imagerotate')) {
+                            // Read EXIF data for orientation (only works for JPEG)
+                            $orientation = 1; // Default: no rotation
+                            if (in_array($imageExtension, ['jpg', 'jpeg']) && function_exists('exif_read_data')) {
+                                $exif = @exif_read_data($ornamentPhotoPath);
+                                if (!empty($exif['Orientation'])) {
+                                    $orientation = $exif['Orientation'];
+                                }
+                            }
+                            
+                            // Load image based on type
+                            $sourceImage = null;
+                            switch ($imageExtension) {
+                                case 'jpg':
+                                case 'jpeg':
+                                    $sourceImage = @imagecreatefromjpeg($ornamentPhotoPath);
+                                    break;
+                                case 'png':
+                                    $sourceImage = @imagecreatefrompng($ornamentPhotoPath);
+                                    break;
+                                case 'gif':
+                                    $sourceImage = @imagecreatefromgif($ornamentPhotoPath);
+                                    break;
+                            }
+                            
+                            if ($sourceImage) {
+                                $width = imagesx($sourceImage);
+                                $height = imagesy($sourceImage);
+                                
+                                // Apply rotation based on EXIF orientation
+                                $rotatedImage = $sourceImage;
+                                $angle = 0;
+                                
+                                switch ($orientation) {
+                                    case 3: // 180 degrees
+                                        $angle = 180;
+                                        break;
+                                    case 6: // 90 degrees clockwise (rotate -90 or 270)
+                                        $angle = -90;
+                                        $temp = $width;
+                                        $width = $height;
+                                        $height = $temp;
+                                        break;
+                                    case 8: // 90 degrees counter-clockwise (rotate 90)
+                                        $angle = 90;
+                                        $temp = $width;
+                                        $width = $height;
+                                        $height = $temp;
+                                        break;
+                                }
+                                
+                                // Rotate image if needed
+                                if ($angle != 0) {
+                                    $rotatedImage = imagerotate($sourceImage, $angle, 0);
+                                    imagedestroy($sourceImage);
+                                }
+                                
+                                // Create temporary file for rotated image
+                                $tempOrnamentImagePath = sys_get_temp_dir() . '/ornament_photo_' . uniqid() . '.jpg';
+                                
+                                // Save rotated image
+                                imagejpeg($rotatedImage, $tempOrnamentImagePath, 90);
+                                imagedestroy($rotatedImage);
+                                
+                                // Calculate aspect ratio for fixed size box
+                                $aspectRatio = $width / $height;
+                                
+                                // Calculate size to fit in fixed box while maintaining aspect ratio
+                                $finalWidth = $ornamentWidth;
+                                $finalHeight = $ornamentHeight;
+                                
+                                if ($aspectRatio > ($ornamentWidth / $ornamentHeight)) {
+                                    // Image is wider, fit to width
+                                    $finalHeight = $ornamentWidth / $aspectRatio;
+                                } else {
+                                    // Image is taller, fit to height
+                                    $finalWidth = $ornamentHeight * $aspectRatio;
+                                }
+                                
+                                // Center the image in the fixed box
+                                $offsetX = $ornamentX + (($ornamentWidth - $finalWidth) / 2);
+                                $offsetY = $ornamentY + (($ornamentHeight - $finalHeight) / 2);
+                                
+                                // Draw a border box around the ornament photo area
+                                $pdf->SetDrawColor(200, 200, 200); // Light gray border
+                                $pdf->SetLineWidth(0.5);
+                                $pdf->Rect($ornamentX, $ornamentY, $ornamentWidth, $ornamentHeight);
+                                
+                                // Insert the corrected image
+                                $pdf->Image($tempOrnamentImagePath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                                
+                                // Clean up temporary file
+                                if (file_exists($tempOrnamentImagePath)) {
+                                    @unlink($tempOrnamentImagePath);
+                                }
+                            } else {
+                                // Fallback: use original image if GD loading fails
+                                $imageInfo = @getimagesize($ornamentPhotoPath);
+                                if ($imageInfo !== false) {
+                                    $imgWidth = $imageInfo[0];
+                                    $imgHeight = $imageInfo[1];
+                                    $aspectRatio = $imgWidth / $imgHeight;
+                                    
+                                    $finalWidth = $ornamentWidth;
+                                    $finalHeight = $ornamentHeight;
+                                    
+                                    if ($aspectRatio > ($ornamentWidth / $ornamentHeight)) {
+                                        $finalHeight = $ornamentWidth / $aspectRatio;
+                                    } else {
+                                        $finalWidth = $ornamentHeight * $aspectRatio;
+                                    }
+                                    
+                                    $offsetX = $ornamentX + (($ornamentWidth - $finalWidth) / 2);
+                                    $offsetY = $ornamentY + (($ornamentHeight - $finalHeight) / 2);
+                                    
+                                    // Draw a border box around the ornament photo area
+                                    $pdf->SetDrawColor(200, 200, 200); // Light gray border
+                                    $pdf->SetLineWidth(0.5);
+                                    $pdf->Rect($ornamentX, $ornamentY, $ornamentWidth, $ornamentHeight);
+                                    
+                                    $pdf->Image($ornamentPhotoPath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                                }
+                            }
+                        } else {
+                            // GD library not available - use original image without rotation
+                            $imageInfo = @getimagesize($ornamentPhotoPath);
+                            if ($imageInfo !== false) {
+                                $imgWidth = $imageInfo[0];
+                                $imgHeight = $imageInfo[1];
+                                $aspectRatio = $imgWidth / $imgHeight;
+                                
+                                $finalWidth = $ornamentWidth;
+                                $finalHeight = $ornamentHeight;
+                                
+                                if ($aspectRatio > ($ornamentWidth / $ornamentHeight)) {
+                                    $finalHeight = $ornamentWidth / $aspectRatio;
+                                } else {
+                                    $finalWidth = $ornamentHeight * $aspectRatio;
+                                }
+                                
+                                $offsetX = $ornamentX + (($ornamentWidth - $finalWidth) / 2);
+                                $offsetY = $ornamentY + (($ornamentHeight - $finalHeight) / 2);
+                                
+                                // Draw a border box around the ornament photo area
+                                $pdf->SetDrawColor(200, 200, 200); // Light gray border
+                                $pdf->SetLineWidth(0.5);
+                                $pdf->Rect($ornamentX, $ornamentY, $ornamentWidth, $ornamentHeight);
+                                
+                                $pdf->Image($ornamentPhotoPath, $offsetX, $offsetY, $finalWidth, $finalHeight);
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    // If image insertion fails, continue without ornament photo
+                    error_log("Failed to insert ornament photo: " . $e->getMessage());
+                }
+            }
     
             //Purpose (using pledge items)
             $pdf->SetFont('Arial', 'B', 9);

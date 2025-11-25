@@ -311,7 +311,7 @@ try {
                                 }
                             }
                             ?>
-                            <tr>
+                            <tr data-customer-id="<?php echo $customer['customer_id']; ?>">
                                 <td><?php echo $offset + $index + 1; ?></td>
                                 <td style="text-align: center;">
                                     <?php if (!empty($photoPath) && file_exists($basePath . '/' . $photoPath)): ?>
@@ -793,15 +793,28 @@ function deleteCustomer(customerId, customerName) {
     };
     
     fetch(getApiUrl(`api/customers.php?id=${customerId}`), {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
     })
     .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => {
-                throw new Error(`HTTP ${response.status}: ${text}`);
-            });
-        }
-        return response.json();
+        // Get response text first to handle both JSON and text responses
+        return response.text().then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                // If not JSON, treat as error message
+                throw new Error(text || `HTTP ${response.status}: Failed to delete customer`);
+            }
+            
+            if (!response.ok) {
+                throw new Error(data.message || `HTTP ${response.status}: Failed to delete customer`);
+            }
+            
+            return data;
+        });
     })
     .then(data => {
         if (data.success) {
@@ -809,17 +822,29 @@ function deleteCustomer(customerId, customerName) {
             
             // Remove the row from table immediately
             const row = document.querySelector(`tr[data-customer-id="${customerId}"]`);
-            if (!row) {
-                // Try alternative selector
+            if (row) {
+                row.style.transition = 'opacity 0.3s';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                    // If no rows left, show empty message
+                    const tbody = document.querySelector('.data-table tbody');
+                    if (tbody && tbody.children.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i><p style="color: #999;">No customers found</p></td></tr>';
+                    }
+                }, 300);
+            } else {
+                // Fallback: Try alternative selector if data attribute not found
                 const rows = document.querySelectorAll('.data-table tbody tr');
+                let found = false;
                 rows.forEach(r => {
                     const viewBtn = r.querySelector('button[onclick*="viewCustomer(' + customerId + ')"]');
-                    if (viewBtn) {
+                    if (viewBtn && !found) {
+                        found = true;
                         r.style.transition = 'opacity 0.3s';
                         r.style.opacity = '0';
                         setTimeout(() => {
                             r.remove();
-                            // If no rows left, show empty message
                             const tbody = document.querySelector('.data-table tbody');
                             if (tbody && tbody.children.length === 0) {
                                 tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i><p style="color: #999;">No customers found</p></td></tr>';
@@ -827,28 +852,18 @@ function deleteCustomer(customerId, customerName) {
                         }, 300);
                     }
                 });
-            } else {
-                row.style.transition = 'opacity 0.3s';
-                row.style.opacity = '0';
-                setTimeout(() => {
-                    row.remove();
-                    const tbody = document.querySelector('.data-table tbody');
-                    if (tbody && tbody.children.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 10px;"></i><p style="color: #999;">No customers found</p></td></tr>';
+                
+                // If still not found, reload the page
+                if (!found) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const currentPage = urlParams.get('page');
+                    if (currentPage && typeof window.loadPage === 'function') {
+                        setTimeout(() => {
+                            window.loadPage(currentPage, false);
+                        }, 500);
+                    } else {
+                        setTimeout(() => location.reload(), 500);
                     }
-                }, 300);
-            }
-            
-            // Reload the page if row not found
-            if (!row) {
-                const urlParams = new URLSearchParams(window.location.search);
-                const currentPage = urlParams.get('page');
-                if (currentPage && typeof window.loadPage === 'function') {
-                    setTimeout(() => {
-                        window.loadPage(currentPage, false);
-                    }, 500);
-                } else {
-                    setTimeout(() => location.reload(), 500);
                 }
             }
         } else {

@@ -87,6 +87,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (search !== null) {
             params.set('search', search);
         }
+        const status = currentUrl.searchParams.get('status');
+        if (status !== null) {
+            params.set('status', status);
+        }
         
         // Add query string if there are parameters
         if (params.toString()) {
@@ -1216,26 +1220,41 @@ function initLoansPage() {
         });
     }
     
-    // Bind status filter functionality
+    // Bind status filter functionality (if not already bound via onchange)
     const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
+    if (statusFilter && !statusFilter.hasAttribute('data-handler-bound')) {
+        statusFilter.setAttribute('data-handler-bound', 'true');
         statusFilter.addEventListener('change', function() {
             const status = this.value;
-            const search = document.getElementById('loanSearch').value;
+            const search = document.getElementById('loanSearch')?.value || '';
             const url = new URL(window.location);
+            const currentPage = url.searchParams.get('page'); // 'loans' when loaded via dashboard
             
+            // Set status parameter
             if (status && status !== 'active') {
                 url.searchParams.set('status', status);
             } else {
                 url.searchParams.delete('status');
             }
             
+            // Set search parameter
             if (search) {
                 url.searchParams.set('search', search);
+            } else {
+                url.searchParams.delete('search');
             }
             
-            url.searchParams.delete('page');
-            window.location.href = url.toString();
+            // Reset to first page when filtering
+            url.searchParams.delete('p');
+            
+            // If loaded via dashboard (has 'page' parameter), use loadPage
+            if (typeof window.loadPage === 'function' && currentPage) {
+                window.history.pushState({ page: currentPage }, '', url.toString());
+                window.loadPage(currentPage, false);
+            } else {
+                // Direct page access - full reload
+                window.location.href = url.toString();
+            }
         });
     }
 }

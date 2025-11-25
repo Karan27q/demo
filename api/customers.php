@@ -279,15 +279,34 @@ try {
             exit();
         }
         
-        // Check if customer has loans
-        $stmt = $pdo->prepare("SELECT COUNT(*) as loan_count FROM loans WHERE customer_id = ?");
+        // For study purposes: Delete all associated loans first
+        // This allows deletion of customers even if they have loans
+        $stmt = $pdo->prepare("SELECT id, ornament_file, proof_file FROM loans WHERE customer_id = ?");
         $stmt->execute([$id]);
-        $loanCount = $stmt->fetch()['loan_count'];
+        $loans = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        if ($loanCount > 0) {
-            echo json_encode(['success' => false, 'message' => 'Cannot delete customer with existing loans']);
-            exit();
+        // Delete loan files and then loans
+        foreach ($loans as $loan) {
+            // Delete ornament file if exists
+            if (!empty($loan['ornament_file'])) {
+                $ornamentPath = $basePath . '/' . $loan['ornament_file'];
+                if (file_exists($ornamentPath)) {
+                    @unlink($ornamentPath);
+                }
+            }
+            
+            // Delete proof file if exists
+            if (!empty($loan['proof_file'])) {
+                $proofPath = $basePath . '/' . $loan['proof_file'];
+                if (file_exists($proofPath)) {
+                    @unlink($proofPath);
+                }
+            }
         }
+        
+        // Delete all loans for this customer
+        $stmt = $pdo->prepare("DELETE FROM loans WHERE customer_id = ?");
+        $stmt->execute([$id]);
         
         // Delete customer folder and all files
         if (!empty($customer['customer_photo'])) {

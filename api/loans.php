@@ -66,9 +66,9 @@ try {
         }
         
         // Calculate interest amount if not provided
-        // Formula: Principal × (Interest Rate / 100) × (Days / 365)
+        // Formula: Principal × (Interest Rate / 100) × (Days / 30)
         if (empty($interestAmount) && !empty($principalAmount) && !empty($interestRate) && !empty($loanDays)) {
-            $interestAmount = $principalAmount * ($interestRate / 100) * ($loanDays / 365);
+            $interestAmount = $principalAmount * ($interestRate / 100) * ($loanDays / 30);
         }
         
         // Note: Loan number uniqueness check removed - customers can have multiple loans
@@ -186,23 +186,45 @@ try {
         // Get next loan number if action is get_next_number
         $action = $_GET['action'] ?? '';
         
-        if ($action === 'get_next_number') {
-            // Get the highest loan number
-            $stmt = $pdo->query("SELECT loan_no FROM loans ORDER BY CAST(SUBSTRING(loan_no, 2) AS UNSIGNED) DESC LIMIT 1");
-            $lastLoan = $stmt->fetch();
-            
-            if ($lastLoan) {
-                // Extract number from loan_no (e.g., A0004 -> 4)
-                $lastNumber = intval(substr($lastLoan['loan_no'], 1));
-                $nextNumber = $lastNumber + 1;
-                $nextLoanNo = 'A' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
-            } else {
-                // No loans yet, start with A0001
-                $nextLoanNo = 'A0001';
+        if ($action === 'reset_loan_numbers') {
+            // Reset all loan numbers to start from 1, 2, 3, etc. based on creation order
+            try {
+                $pdo->beginTransaction();
+                
+                // Get all loans ordered by creation date (id)
+                $stmt = $pdo->query("SELECT id FROM loans ORDER BY id ASC");
+                $loans = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                $loanNumber = 1;
+                foreach ($loans as $loan) {
+                    $updateStmt = $pdo->prepare("UPDATE loans SET loan_no = ? WHERE id = ?");
+                    $updateStmt->execute([$loanNumber, $loan['id']]);
+                    $loanNumber++;
+                }
+                
+                $pdo->commit();
+                echo json_encode(['success' => true, 'message' => 'Loan numbers reset successfully. Next loan number will be ' . $loanNumber]);
+                exit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                echo json_encode(['success' => false, 'message' => 'Error resetting loan numbers: ' . $e->getMessage()]);
+                exit();
             }
-            
-            echo json_encode(['success' => true, 'loan_no' => $nextLoanNo]);
-            exit();
+        }
+        
+        if ($action === 'get_next_number') {
+            try {
+                // RESET: Always return 1 as the next loan number
+                // This resets the loan numbering to start from 1
+                $nextLoanNo = 1;
+                
+                echo json_encode(['success' => true, 'loan_no' => $nextLoanNo], JSON_NUMERIC_CHECK);
+                exit();
+            } catch (Exception $e) {
+                // Return default value 1 if there's an error
+                echo json_encode(['success' => true, 'loan_no' => 1], JSON_NUMERIC_CHECK);
+                exit();
+            }
         }
         
         // Get customer details by ID
@@ -316,8 +338,9 @@ try {
         }
         
         // Calculate interest amount if not provided
+        // Formula: Principal × (Interest Rate / 100) × (Days / 30)
         if (empty($interestAmount) && !empty($principalAmount) && !empty($interestRate) && !empty($loanDays)) {
-            $interestAmount = ($principalAmount * $interestRate * $loanDays) / 100;
+            $interestAmount = $principalAmount * ($interestRate / 100) * ($loanDays / 30);
         }
         
         $stmt = $pdo->prepare("

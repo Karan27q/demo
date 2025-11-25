@@ -29,12 +29,12 @@ try {
     $customer = $stmt->fetch();
     
     // Calculate interest
-    // Formula: Principal × (Interest Rate / 100) × (Days / 365)
+    // Formula: Principal × (Interest Rate / 100) × (Days / 30)
     $principal = floatval($loan['principal_amount'] ?? 0);
     $interestRate = floatval($loan['interest_rate'] ?? 0);
     $loanDays = floatval($loan['loan_days'] ?? 0);
     $interestAmount = ($principal > 0 && $interestRate > 0 && $loanDays > 0) 
-        ? $principal * ($interestRate / 100) * ($loanDays / 365)
+        ? $principal * ($interestRate / 100) * ($loanDays / 30)
         : floatval($loan['interest_amount'] ?? 0);
     $totalAmount = $principal + $interestAmount;
     

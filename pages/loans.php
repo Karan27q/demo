@@ -82,14 +82,26 @@ try {
     
     // Count query - show ALL loans (no deduplication)
     // Each loan has a unique 'id', so we show all loans for all customers
-    $stmt = $pdo->prepare("
+    $countStmt = $pdo->prepare("
         SELECT COUNT(*) as total 
         FROM loans l
         INNER JOIN customers c ON l.customer_id = c.id
         $whereClause
     ");
-    $stmt->execute($params);
-    $totalRecords = $stmt->fetch()['total'];
+    
+    // Bind parameters for count query
+    $countParamIndex = 1;
+    if ($status !== 'all') {
+        $countStmt->bindValue($countParamIndex++, $status);
+    }
+    if (!empty($search)) {
+        $searchTerm = "%$search%";
+        $countStmt->bindValue($countParamIndex++, $searchTerm);
+        $countStmt->bindValue($countParamIndex++, $searchTerm);
+        $countStmt->bindValue($countParamIndex++, $searchTerm);
+    }
+    $countStmt->execute();
+    $totalRecords = $countStmt->fetch()['total'];
     $totalPages = ceil($totalRecords / $limit);
     
     // Fetch query - show ALL loans (no deduplication)
@@ -483,7 +495,7 @@ try {
                     </div>
                     <div class="form-group">
                         <label for="loanNo">Loan No *</label>
-                        <input type="text" id="loanNo" name="loan_no" required placeholder="Loan No" autocomplete="off">
+                        <input type="text" id="loanNo" name="loan_no" required placeholder="Loan No" autocomplete="off" readonly style="background-color: #f5f5f5; cursor: not-allowed;">
                     </div>
                     <div class="form-group">
                         <label for="loanDate">Date *</label>
@@ -833,25 +845,83 @@ window.navigateToPage = function(path) {
     window.initLoansPage = initLoansPage;
 })();
 
-function showAddLoanModal() {
-    showModal('addLoanModal');
+// Override showAddLoanModal to ensure this version is used
+window.showAddLoanModal = function() {
+    console.log('showAddLoanModal called from loans.php');
     
-    // Fetch next loan number
-    fetch(apiUrl('api/loans.php?action=get_next_number'))
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.loan_no) {
-                const loanNoField = document.getElementById('loanNo');
-                if (loanNoField) {
-                    loanNoField.value = data.loan_no;
-                }
+    // Show modal first
+    const modal = document.getElementById('addLoanModal');
+    if (modal) {
+        modal.style.display = 'block';
+    }
+    
+    // Function to fetch and set loan number with retry logic
+    function fetchAndSetLoanNumber(retryCount = 0) {
+        const loanNoField = document.getElementById('loanNo');
+        console.log('fetchAndSetLoanNumber attempt:', retryCount, 'Field found:', !!loanNoField);
+        
+        if (!loanNoField) {
+            // Retry up to 15 times if field not found
+            if (retryCount < 15) {
+                setTimeout(() => fetchAndSetLoanNumber(retryCount + 1), 100);
+            } else {
+                console.error('Loan number field not found after 15 attempts');
             }
-        })
-        .catch(error => {
-            console.error('Error fetching next loan number:', error);
-        });
+            return;
+        }
+        
+        // Use the apiUrl function, with fallback
+        const getApiUrl = (typeof apiUrl !== 'undefined') ? apiUrl : (typeof window.apiUrl !== 'undefined') ? window.apiUrl : function(path) {
+            const p = window.location && window.location.pathname || '';
+            const underPages = p.indexOf('/pages/') !== -1;
+            return (underPages ? '../' : '') + path;
+        };
+        
+        const apiPath = getApiUrl('api/loans.php?action=get_next_number');
+        console.log('Fetching loan number from:', apiPath);
+        
+        fetch(apiPath)
+            .then(response => {
+                console.log('API response status:', response.status, response.statusText);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.status);
+                }
+                return response.text().then(text => {
+                    console.log('API raw response:', text);
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        console.error('JSON parse error:', e, 'Response text:', text);
+                        throw new Error('Invalid JSON response');
+                    }
+                });
+            })
+            .then(data => {
+                console.log('API response data:', data);
+                if (data.success && data.loan_no !== undefined && data.loan_no !== null) {
+                    const loanNo = data.loan_no.toString();
+                    loanNoField.value = loanNo;
+                    console.log('Loan number successfully set to:', loanNo);
+                    // Force a re-render by triggering input event
+                    loanNoField.dispatchEvent(new Event('input', { bubbles: true }));
+                } else {
+                    console.error('Invalid response from API:', data);
+                    // Set default to 1 if no valid response
+                    loanNoField.value = '1';
+                    console.log('Set default loan number to: 1');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching next loan number:', error);
+                // Set default to 1 if fetch fails
+                if (loanNoField) {
+                    loanNoField.value = '1';
+                    console.log('Set default loan number to: 1 (due to error)');
+                }
+            });
+    }
     
-    // Small delay to ensure modal is fully rendered
+    // Wait a bit longer to ensure modal is fully rendered and visible
     setTimeout(() => {
         // Reset form completely to clear any cached data
         const form = document.getElementById('addLoanForm');
@@ -873,27 +943,38 @@ function showAddLoanModal() {
             }
             
             // Clear other fields
-            document.getElementById('principalAmount').value = '';
-            document.getElementById('interestRate').value = '';
-            document.getElementById('loanDays').value = '';
-            document.getElementById('totalWeight').value = '';
-            document.getElementById('netWeight').value = '';
-            document.getElementById('pledgeItems').value = '';
+            const principalAmount = document.getElementById('principalAmount');
+            if (principalAmount) principalAmount.value = '';
+            const interestRate = document.getElementById('interestRate');
+            if (interestRate) interestRate.value = '';
+            const loanDays = document.getElementById('loanDays');
+            if (loanDays) loanDays.value = '';
+            const totalWeight = document.getElementById('totalWeight');
+            if (totalWeight) totalWeight.value = '';
+            const netWeight = document.getElementById('netWeight');
+            if (netWeight) netWeight.value = '';
+            const pledgeItems = document.getElementById('pledgeItems');
+            if (pledgeItems) pledgeItems.value = '';
             
             // Hide calculation box
             const calcBox = document.getElementById('loanCalculationBox');
             if (calcBox) {
                 calcBox.style.display = 'none';
             }
+            
+            // Fetch and set loan number after form reset
+            fetchAndSetLoanNumber();
+        } else {
+            console.error('addLoanForm not found');
         }
-    }, 100);
-}
+    }, 300);
+};
 
 // Customer selection handler removed - no longer needed
 
 // Real-time interest calculation
-// Formula: (Principal × Interest Rate × Days) / 100
-// Example: (10000 × 1 × 30) / 100 = 100
+// Formula: Principal × (Interest Rate / 100) × (Days / 30)
+// Example: 10000 × (1 / 100) × (30 / 30) = 100
 function calculateInterest() {
     const principal = parseFloat(document.getElementById('principalAmount').value) || 0;
     const interestRate = parseFloat(document.getElementById('interestRate').value) || 0;
@@ -1061,9 +1142,28 @@ function addLoan(event) {
             }
             showSuccessMessage('Loan added successfully!');
             
-            // Redirect to reports page
+            // Reload the loans page to show the new loan
             setTimeout(() => {
-                window.location.href = 'dashboard.php?page=reports';
+                const url = new URL(window.location);
+                const currentPage = url.searchParams.get('page'); // 'loans' when loaded via dashboard
+                
+                // Reset to first page and clear search to show new loan
+                url.searchParams.set('page', 'loans');
+                url.searchParams.delete('p'); // Reset pagination
+                url.searchParams.delete('search'); // Clear search
+                // Keep status filter as is (or reset to 'active' if you prefer)
+                if (!url.searchParams.get('status')) {
+                    url.searchParams.set('status', 'active');
+                }
+                
+                // If loaded via dashboard, use loadPage for smooth navigation
+                if (typeof window.loadPage === 'function' && currentPage) {
+                    window.history.pushState({ page: 'loans' }, '', url.toString());
+                    window.loadPage('loans', false);
+                } else {
+                    // Direct page access - full reload
+                    window.location.href = url.toString();
+                }
             }, 500);
         } else {
             alert('Error: ' + data.message);
@@ -1125,10 +1225,10 @@ function updateInterestLoanDetails() {
             calcBox.style.display = 'none';
         }
         
-        // Calculate interest: Principal × (Interest Rate / 100) × (Days / 365)
+        // Calculate interest: Principal × (Interest Rate / 100) × (Days / 30)
         let interestAmount = 0;
         if (principal > 0 && interestRate > 0 && days > 0) {
-            interestAmount = principal * (interestRate / 100) * (days / 365);
+            interestAmount = principal * (interestRate / 100) * (days / 30);
         }
         
         const totalAmount = principal + interestAmount;
@@ -1189,25 +1289,31 @@ function filterByStatus() {
     const status = document.getElementById('statusFilter').value;
     const search = document.getElementById('loanSearch').value;
     const url = new URL(window.location);
-    const currentPage = url.searchParams.get('page');
+    const currentPage = url.searchParams.get('page'); // This will be 'loans' when loaded via dashboard
     
-    if (currentPage) {
-        url.searchParams.set('page', currentPage);
+    // Set status parameter
+    if (status && status !== 'active') {
+        url.searchParams.set('status', status);
+    } else {
+        url.searchParams.delete('status');
     }
-    url.searchParams.set('status', status);
     
+    // Set search parameter
     if (search) {
         url.searchParams.set('search', search);
     } else {
         url.searchParams.delete('search');
     }
     
+    // Reset to first page when filtering
     url.searchParams.delete('p');
     
+    // If loaded via dashboard (has 'page' parameter), use loadPage
     if (typeof window.loadPage === 'function' && currentPage) {
         window.history.pushState({ page: currentPage }, '', url.toString());
         window.loadPage(currentPage, false);
     } else {
+        // Direct page access - full reload
         window.location.href = url.toString();
     }
 }
@@ -1285,7 +1391,7 @@ function viewLoanDetails(loanId) {
                         const interestRate = parseFloat(loan.interest_rate) || 0;
                         const loanDays = parseFloat(loan.loan_days) || 0;
                         const interestAmount = (principal > 0 && interestRate > 0 && loanDays > 0) 
-                            ? (principal * interestRate * loanDays) / 100 
+                            ? principal * (interestRate / 100) * (loanDays / 30)
                             : (parseFloat(loan.interest_amount) || 0);
                         const totalAmount = principal + interestAmount;
                         
@@ -1496,7 +1602,7 @@ function updateLoan(event) {
     const loanDays = parseFloat(formData.get('loan_days')) || 0;
     
     if (principal > 0 && interestRate > 0 && loanDays > 0) {
-        const interestAmount = (principal * interestRate * loanDays) / 100;
+        const interestAmount = principal * (interestRate / 100) * (loanDays / 30);
         formData.append('interest_amount', interestAmount.toFixed(2));
     }
     
@@ -1552,8 +1658,8 @@ function calculateEditInterest() {
     const calcBox = document.getElementById('editLoanCalculationBox');
     
     if (principal > 0 && interestRate > 0 && loanDays > 0) {
-        // Calculate interest: (Principal × Interest Rate × Days) / 100
-        const interest = (principal * interestRate * loanDays) / 100;
+        // Calculate interest: Principal × (Interest Rate / 100) × (Days / 30)
+        const interest = principal * (interestRate / 100) * (loanDays / 30);
         const total = principal + interest;
         
         // Update calculation display

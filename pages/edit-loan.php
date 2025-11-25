@@ -181,7 +181,7 @@ try {
         }
         
         // Real-time interest calculation
-        // Formula: Principal × (Interest Rate / 100) × (Days / 365)
+        // Formula: Principal × (Interest Rate / 100) × (Days / 30)
         function calculateInterest() {
             const principal = parseFloat(document.getElementById('principalAmount').value) || 0;
             const interestRate = parseFloat(document.getElementById('interestRate').value) || 0;
@@ -189,8 +189,8 @@ try {
             const calcBox = document.getElementById('loanCalculationBox');
             
             if (principal > 0 && interestRate > 0 && loanDays > 0) {
-                // Calculate interest: Principal × (Interest Rate / 100) × (Days / 365)
-                const interest = principal * (interestRate / 100) * (loanDays / 365);
+                // Calculate interest: Principal × (Interest Rate / 100) × (Days / 30)
+                const interest = principal * (interestRate / 100) * (loanDays / 30);
                 const total = principal + interest;
                 
                 // Update calculation display
@@ -249,7 +249,7 @@ try {
                     const loanDays = parseFloat(formData.get('loan_days')) || 0;
                     
                     if (principal > 0 && interestRate > 0 && loanDays > 0) {
-                        const interestAmount = principal * (interestRate / 100) * (loanDays / 365);
+                        const interestAmount = principal * (interestRate / 100) * (loanDays / 30);
                         formData.append('interest_amount', interestAmount.toFixed(2));
                     }
                     
