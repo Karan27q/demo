@@ -45,8 +45,37 @@ function initializeDatabase() {
             name VARCHAR(100) NOT NULL,
             mobile VARCHAR(15) NOT NULL,
             address TEXT,
+            place VARCHAR(100),
+            pincode VARCHAR(10),
+            additional_number VARCHAR(15),
+            reference VARCHAR(100),
+            proof_type VARCHAR(50),
+            customer_photo VARCHAR(255),
+            proof_file VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )");
+        
+        // Add new columns to existing customers table if they don't exist
+        $customersColumns = [
+            'place' => 'VARCHAR(100)',
+            'pincode' => 'VARCHAR(10)',
+            'additional_number' => 'VARCHAR(15)',
+            'reference' => 'VARCHAR(100)',
+            'proof_type' => 'VARCHAR(50)',
+            'customer_photo' => 'VARCHAR(255)',
+            'proof_file' => 'VARCHAR(255)'
+        ];
+        
+        foreach ($customersColumns as $column => $type) {
+            try {
+                $stmt = $pdo->query("SHOW COLUMNS FROM customers LIKE '$column'");
+                if ($stmt->rowCount() == 0) {
+                    $pdo->exec("ALTER TABLE customers ADD COLUMN $column $type");
+                }
+            } catch(PDOException $e) {
+                // Column might already exist or table doesn't exist yet, ignore
+            }
+        }
         
         // Create groups table
         $pdo->exec("CREATE TABLE IF NOT EXISTS groups (
@@ -66,20 +95,74 @@ function initializeDatabase() {
         )");
         
         // Create loans table
+        // Note: loan_no is NOT unique - allows multiple loans per customer
+        // The primary key 'id' ensures each loan is unique
         $pdo->exec("CREATE TABLE IF NOT EXISTS loans (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            loan_no VARCHAR(20) UNIQUE NOT NULL,
+            loan_no VARCHAR(20) NOT NULL,
             customer_id INT NOT NULL,
             loan_date DATE NOT NULL,
             principal_amount DECIMAL(10,2) NOT NULL,
             interest_rate DECIMAL(5,2) NOT NULL,
+            loan_days INT,
+            interest_amount DECIMAL(10,2),
             total_weight DECIMAL(8,3),
             net_weight DECIMAL(8,3),
             pledge_items TEXT,
+            date_of_birth DATE,
+            group_id INT,
+            recovery_period VARCHAR(50),
+            ornament_file VARCHAR(255),
+            proof_file VARCHAR(255),
             status ENUM('active', 'closed') DEFAULT 'active',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (customer_id) REFERENCES customers(id)
+            INDEX idx_loans_customer_id (customer_id),
+            INDEX idx_loans_loan_no (loan_no),
+            INDEX idx_loans_status (status),
+            INDEX idx_loans_date (loan_date),
+            INDEX idx_loans_customer_loan (customer_id, loan_no),
+            FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+            FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL ON UPDATE CASCADE
         )");
+        
+        // Add new columns to existing loans table if they don't exist
+        $loansColumns = [
+            'date_of_birth' => 'DATE',
+            'group_id' => 'INT',
+            'recovery_period' => 'VARCHAR(50)',
+            'ornament_file' => 'VARCHAR(255)',
+            'proof_file' => 'VARCHAR(255)',
+            'loan_days' => 'INT',
+            'interest_amount' => 'DECIMAL(10,2)'
+        ];
+        
+        foreach ($loansColumns as $column => $type) {
+            try {
+                $stmt = $pdo->query("SHOW COLUMNS FROM loans LIKE '$column'");
+                if ($stmt->rowCount() == 0) {
+                    $sql = "ALTER TABLE loans ADD COLUMN $column $type";
+                    if ($column === 'group_id') {
+                        $sql .= ", ADD INDEX idx_group_id (group_id)";
+                    }
+                    $pdo->exec($sql);
+                }
+            } catch(PDOException $e) {
+                // Column might already exist or table doesn't exist yet, ignore
+            }
+        }
+        
+        // Add foreign key if it doesn't exist
+        try {
+            $stmt = $pdo->query("SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                AND TABLE_NAME = 'loans' 
+                AND CONSTRAINT_NAME = 'fk_loans_group'");
+            if ($stmt->rowCount() == 0) {
+                $pdo->exec("ALTER TABLE loans ADD CONSTRAINT fk_loans_group FOREIGN KEY (group_id) REFERENCES groups(id)");
+            }
+        } catch(PDOException $e) {
+            // Foreign key might already exist or groups table doesn't exist yet, ignore
+        }
         
         // Create interest table
         $pdo->exec("CREATE TABLE IF NOT EXISTS interest (

@@ -87,6 +87,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (search !== null) {
             params.set('search', search);
         }
+        const status = currentUrl.searchParams.get('status');
+        if (status !== null) {
+            params.set('status', status);
+        }
         
         // Add query string if there are parameters
         if (params.toString()) {
@@ -399,6 +403,21 @@ document.addEventListener('keydown', function(event) {
 
 // Customer-specific functions
 function showAddCustomerModal() {
+    // Fetch next customer number
+    fetch(apiUrl('api/customers.php?action=get_next_number'))
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.customer_no) {
+                const customerNoField = document.getElementById('customerNo');
+                if (customerNoField) {
+                    customerNoField.value = data.customer_no;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching next customer number:', error);
+        });
+    
     showModal('addCustomerModal');
 }
 
@@ -425,80 +444,8 @@ function addCustomer(event) {
             // Show success message
             showSuccessMessage('Customer added successfully!');
             
-            // Check if we're on the customers page and reload it
-            const urlParams = new URLSearchParams(window.location.search);
-            const currentPage = urlParams.get('page');
-            
-            if (currentPage === 'customers' || window.location.pathname.includes('customers')) {
-                // Reload customers page content via AJAX, clearing search and going to page 1
-                if (typeof window.loadPage === 'function') {
-                    // Clear search and pagination params, then reload
-                    const url = new URL(window.location);
-                    url.searchParams.delete('search');
-                    url.searchParams.delete('p'); // Clear pagination to go to page 1
-                    url.searchParams.set('page', 'customers'); // Keep routing param
-                    window.history.replaceState({ page: 'customers' }, '', url.toString());
-                    
-                    // Small delay to ensure database transaction is committed, then reload
-                    setTimeout(() => {
-                        // Force reload by fetching page 1 explicitly
-                        const fetchUrl = apiUrl('pages/customers.php?p=1');
-                        console.log('Reloading customers page from:', fetchUrl);
-                        
-                        fetch(fetchUrl)
-                            .then(response => {
-                                if (!response.ok) {
-                                    throw new Error('Page not found');
-                                }
-                                return response.text();
-                            })
-                            .then(html => {
-                                const contentArea = document.getElementById('contentArea');
-                                if (contentArea) {
-                                    contentArea.innerHTML = html;
-                                    console.log('Customers page reloaded successfully');
-                                    
-                                    // Re-initialize search functionality after dynamic injection
-                                    if (typeof window.initCustomerSearch === 'function') {
-                                        window.initCustomerSearch();
-                                    }
-                                    
-                                    // Also trigger any other initialization that might be needed
-                                    const scripts = contentArea.querySelectorAll('script');
-                                    scripts.forEach(script => {
-                                        // Execute inline scripts that were injected
-                                        if (script.textContent) {
-                                            try {
-                                                eval(script.textContent);
-                                            } catch (e) {
-                                                console.error('Error executing injected script:', e);
-                                            }
-                                        }
-                                    });
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Error reloading customers page:', error);
-                                // Fallback to loadPage
-                                window.loadPage('customers', false);
-                            });
-                    }, 200);
-                } else {
-                    // Fallback: full page reload
-                    const url = new URL(window.location);
-                    url.searchParams.delete('search');
-                    url.searchParams.delete('p');
-                    url.searchParams.set('page', 'customers');
-                    window.location.href = url.toString();
-                }
-            } else {
-                // Not on customers page, navigate to customers page
-                const url = new URL(window.location);
-                url.searchParams.delete('search');
-                url.searchParams.delete('p');
-                url.searchParams.set('page', 'customers');
-                window.location.href = url.toString();
-            }
+            // Redirect to loans page
+            window.location.href = 'http://localhost/demo/dashboard.php?page=loans';
         } else {
             alert('Error: ' + data.message);
         }
@@ -1273,26 +1220,41 @@ function initLoansPage() {
         });
     }
     
-    // Bind status filter functionality
+    // Bind status filter functionality (if not already bound via onchange)
     const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
+    if (statusFilter && !statusFilter.hasAttribute('data-handler-bound')) {
+        statusFilter.setAttribute('data-handler-bound', 'true');
         statusFilter.addEventListener('change', function() {
             const status = this.value;
-            const search = document.getElementById('loanSearch').value;
+            const search = document.getElementById('loanSearch')?.value || '';
             const url = new URL(window.location);
+            const currentPage = url.searchParams.get('page'); // 'loans' when loaded via dashboard
             
+            // Set status parameter
             if (status && status !== 'active') {
                 url.searchParams.set('status', status);
             } else {
                 url.searchParams.delete('status');
             }
             
+            // Set search parameter
             if (search) {
                 url.searchParams.set('search', search);
+            } else {
+                url.searchParams.delete('search');
             }
             
-            url.searchParams.delete('page');
-            window.location.href = url.toString();
+            // Reset to first page when filtering
+            url.searchParams.delete('p');
+            
+            // If loaded via dashboard (has 'page' parameter), use loadPage
+            if (typeof window.loadPage === 'function' && currentPage) {
+                window.history.pushState({ page: currentPage }, '', url.toString());
+                window.loadPage(currentPage, false);
+            } else {
+                // Direct page access - full reload
+                window.location.href = url.toString();
+            }
         });
     }
 }
@@ -1455,25 +1417,17 @@ async function loadPdfCustomers(){
                     const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
                     const d = await r.json();
                     if (d.success && Array.isArray(d.loans)) {
-                        // Deduplicate by loan_no to ensure each loan number appears only once
-                        const seenLoanNos = new Set();
-                        const uniqueLoans = [];
-                        
+                        // Show ALL loans (no deduplication - each loan has unique id)
+                        // Display format: Loan No (Date) - Status - Principal Amount
                         d.loans.forEach(l => {
-                            const loanNo = String(l.loan_no || '').trim();
-                            if (loanNo && !seenLoanNos.has(loanNo)) {
-                                seenLoanNos.add(loanNo);
-                                uniqueLoans.push(l);
-                            }
-                        });
-                        
-                        // Add unique loans to dropdown
-                        uniqueLoans.forEach(l => {
                             const opt = document.createElement('option');
-                            opt.value = l.id;
+                            opt.value = l.id; // Use loan ID (unique)
+                            opt.setAttribute('data-loan-id', l.id);
                             opt.setAttribute('data-loan-no', l.loan_no || '');
+                            opt.setAttribute('data-loan-date', l.loan_date || '');
                             const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
-                            opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
+                            const principal = l.principal_amount ? `₹${parseFloat(l.principal_amount).toLocaleString('en-IN')}` : '';
+                            opt.textContent = `${l.loan_no} (${date}) - ${l.status || 'active'} ${principal ? '- ' + principal : ''}`;
                             loanSelect.appendChild(opt);
                         });
                     }
@@ -1523,12 +1477,17 @@ async function loadPledgeCustomers(){
                 const r = await fetch(`api/loans.php?action=by_customer&customer_id=${cid}`);
                 const d = await r.json();
                 if (d.success && Array.isArray(d.loans)) {
+                    // Show ALL loans (no deduplication - each loan has unique id)
+                    // Display format: Loan No (Date) - Status - Principal Amount
                     d.loans.forEach(l => {
                         const opt = document.createElement('option');
-                        opt.value = l.id;
+                        opt.value = l.id; // Use loan ID (unique)
+                        opt.setAttribute('data-loan-id', l.id);
                         opt.setAttribute('data-loan-no', l.loan_no || '');
+                        opt.setAttribute('data-loan-date', l.loan_date || '');
                         const date = l.loan_date ? new Date(l.loan_date).toLocaleDateString('en-GB') : '';
-                        opt.textContent = `${l.loan_no} (${date}) - ${l.status}`;
+                        const principal = l.principal_amount ? `₹${parseFloat(l.principal_amount).toLocaleString('en-IN')}` : '';
+                        opt.textContent = `${l.loan_no} (${date}) - ${l.status || 'active'} ${principal ? '- ' + principal : ''}`;
                         loanSelect.appendChild(opt);
                     });
                 }
@@ -1541,24 +1500,63 @@ async function loadPledgeCustomers(){
 
 // View loan PDF function
 function viewLoanPdf(){
-    const loanId = document.getElementById('pdfLoan').value;
-    if (!loanId) { alert('Please select a loan'); return; }
-    // Submit to the existing FPDI-based template which expects POST
     const loanSel = document.getElementById('pdfLoan');
-    const loanNo = loanSel.options[loanSel.selectedIndex]?.getAttribute('data-loan-no') || '';
+    const selectedOption = loanSel.options[loanSel.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        alert('Please select a loan');
+        return;
+    }
+    
+    // Use loan_id (unique) as primary identifier, loan_no as fallback
+    const loanId = selectedOption.getAttribute('data-loan-id') || selectedOption.value;
+    const loanNo = selectedOption.getAttribute('data-loan-no') || '';
+    
     const form = document.getElementById('fpdfLoanForm');
-    document.getElementById('fpdfLoanNo').value = loanNo;
-    form.submit();
+    if (form) {
+        // Set both loan_id and loan_no for compatibility
+        const loanIdInput = document.getElementById('fpdfLoanId');
+        const loanNoInput = document.getElementById('fpdfLoanNo');
+        if (loanIdInput) loanIdInput.value = loanId;
+        if (loanNoInput) loanNoInput.value = loanNo;
+        form.submit();
+    } else {
+        console.error('PDF form not found');
+    }
 }
 
 // View pledge PDF function
 function viewPledgePdf(){
-    const loanId = document.getElementById('pledgeLoan').value;
-    if (!loanId) { alert('Please select a loan'); return; }
-    // Submit to the existing FPDI-based template which expects POST
     const loanSel = document.getElementById('pledgeLoan');
-    const loanNo = loanSel.options[loanSel.selectedIndex]?.getAttribute('data-loan-no') || '';
+    const customerSelect = document.getElementById('pledgeCustomer');
+    const selectedOption = loanSel.options[loanSel.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        alert('Please select a loan');
+        return;
+    }
+    
+    // Use loan_id (unique) as primary identifier, loan_no as fallback
+    const loanId = selectedOption.getAttribute('data-loan-id') || selectedOption.value;
+    const loanNo = selectedOption.getAttribute('data-loan-no') || '';
+    const loanDate = selectedOption.getAttribute('data-loan-date') || '';
+    
+    // Get customer ID from customer select if available
+    const customerId = customerSelect ? customerSelect.value : '';
+    
     const form = document.getElementById('fpdfLoanForm');
-    document.getElementById('fpdfLoanNo').value = loanNo;
-    form.submit();
+    if (form) {
+        // Set all form values for accurate loan fetching with customer and date
+        const loanIdInput = document.getElementById('fpdfLoanId');
+        const loanNoInput = document.getElementById('fpdfLoanNo');
+        const customerIdInput = document.getElementById('fpdfCustomerId');
+        const loanDateInput = document.getElementById('fpdfLoanDate');
+        if (loanIdInput) loanIdInput.value = loanId;
+        if (loanNoInput) loanNoInput.value = loanNo;
+        if (customerIdInput) customerIdInput.value = customerId;
+        if (loanDateInput) loanDateInput.value = loanDate;
+        form.submit();
+    } else {
+        console.error('PDF form not found');
+    }
 }

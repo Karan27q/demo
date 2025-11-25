@@ -272,10 +272,23 @@ try {
                                 <td title="<?php echo htmlspecialchars($loan['pledge_items']); ?>">
                                     <?php echo htmlspecialchars(substr($loan['pledge_items'], 0, 30)) . (strlen($loan['pledge_items']) > 30 ? '...' : ''); ?>
                                 </td>
-                                <td>
-                                    <span class="status-badge <?php echo $loan['days_passed'] > 90 ? 'status-warning' : 'status-active'; ?>">
-                                        <?php echo $loan['days_passed']; ?> days
-                                    </span>
+                                <td style="text-align: center;">
+                                    <div class="days-badge-container">
+                                        <span class="days-badge <?php 
+                                            if ($loan['days_passed'] > 180) {
+                                                echo 'days-critical';
+                                            } elseif ($loan['days_passed'] > 90) {
+                                                echo 'days-warning';
+                                            } elseif ($loan['days_passed'] > 30) {
+                                                echo 'days-active';
+                                            } else {
+                                                echo 'days-new';
+                                            }
+                                        ?>">
+                                            <span class="days-number"><?php echo $loan['days_passed']; ?></span>
+                                            <span class="days-label">days</span>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td>₹<?php echo number_format($loan['interest_paid'], 2); ?></td>
                                 <td>
@@ -607,6 +620,85 @@ function viewLoanDetails(loanId) {
     gap: 10px;
 }
 
+/* Days Badge Styling */
+.days-badge-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 5px 0;
+}
+
+.days-badge {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 70px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.days-badge .days-number {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 2px;
+}
+
+.days-badge .days-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.9;
+}
+
+/* Days Badge Color Variants */
+.days-badge.days-new {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+}
+
+.days-badge.days-active {
+    background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+    color: white;
+}
+
+.days-badge.days-warning {
+    background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+    color: white;
+}
+
+.days-badge.days-critical {
+    background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    50% {
+        box-shadow: 0 2px 8px rgba(229, 62, 62, 0.4);
+    }
+}
+
+.days-badge:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Table cell alignment for days column */
+.data-table td:nth-child(9) {
+    text-align: center;
+    vertical-align: middle;
+}
+
 @media (max-width: 768px) {
     .dashboard-row {
         grid-template-columns: 1fr;
@@ -614,6 +706,19 @@ function viewLoanDetails(loanId) {
     
     .dashboard-cards {
         grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .days-badge {
+        min-width: 60px;
+        padding: 6px 10px;
+    }
+    
+    .days-badge .days-number {
+        font-size: 16px;
+    }
+    
+    .days-badge .days-label {
+        font-size: 9px;
     }
 }
 </style>
