@@ -1155,9 +1155,189 @@ function initLoanClosingPage() {
 function initReportsPage() {
     console.log('Initializing reports page...');
     
-    // Note: loadPdfCustomers() is handled by reports.php inline script
-    // Only load pledge customers if needed
-    // loadPledgeCustomers();
+    let initialized = false;
+    
+    // Function to initialize reports page dropdowns
+    function initializeReportsDropdowns() {
+        if (initialized) {
+            console.log('Reports page already initialized, skipping...');
+            return true;
+        }
+        
+        const customerSelect = document.getElementById('pdfCustomer');
+        const loanSelect = document.getElementById('pdfLoan');
+        
+        if (!customerSelect || !loanSelect) {
+            return false;
+        }
+        
+        console.log('Found reports page elements, initializing...');
+        initialized = true;
+        
+        // Get API URL
+        const customersApiUrl = apiUrl('api/customers.php');
+        console.log('Loading customers from:', customersApiUrl);
+        
+        // Load customers
+        fetch(customersApiUrl)
+            .then(response => {
+                console.log('Customers API response status:', response.status, response.statusText);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    return response.text().then(text => {
+                        console.error('Non-JSON response received:', text.substring(0, 300));
+                        throw new Error('Server returned non-JSON response');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Customers API data received:', data);
+                if (data && data.success && Array.isArray(data.customers)) {
+                    customerSelect.innerHTML = '<option value="">Select Customer</option>';
+                    let count = 0;
+                    data.customers.forEach(customer => {
+                        const option = document.createElement('option');
+                        option.value = customer.id;
+                        const customerNo = customer.customer_no || '';
+                        option.textContent = customerNo ? `${customerNo} - ${customer.name}` : customer.name;
+                        customerSelect.appendChild(option);
+                        count++;
+                    });
+                    console.log('✓ Loaded', count, 'customers into dropdown');
+                    
+                    // Attach event listener for customer dropdown (only once)
+                    if (!customerSelect.dataset.listenerAttached) {
+                        customerSelect.dataset.listenerAttached = 'true';
+                        customerSelect.addEventListener('change', function() {
+                            const customerId = this.value;
+                            console.log('Customer selected:', customerId);
+                            
+                            if (!customerId) {
+                                loanSelect.innerHTML = '<option value="">Select Loan</option>';
+                                return;
+                            }
+                            
+                            loanSelect.innerHTML = '<option value="">Select Loan</option>';
+                            const loansApiUrl = apiUrl(`api/loans.php?action=by_customer&customer_id=${customerId}`);
+                            console.log('Loading loans for customer', customerId, 'from:', loansApiUrl);
+                            
+                            fetch(loansApiUrl)
+                                .then(response => {
+                                    console.log('Loans API response status:', response.status, response.statusText);
+                                    if (!response.ok) {
+                                        throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                                    }
+                                    const contentType = response.headers.get('content-type');
+                                    if (!contentType || !contentType.includes('application/json')) {
+                                        return response.text().then(text => {
+                                            console.error('Non-JSON response received:', text.substring(0, 300));
+                                            throw new Error('Server returned non-JSON response');
+                                        });
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Loans API data received:', data);
+                                    if (data && data.success && Array.isArray(data.loans)) {
+                                        const seenLoanNos = new Set();
+                                        const uniqueLoans = [];
+                                        
+                                        data.loans.forEach(loan => {
+                                            const loanNo = String(loan.loan_no || '').trim();
+                                            if (loanNo && !seenLoanNos.has(loanNo)) {
+                                                seenLoanNos.add(loanNo);
+                                                uniqueLoans.push(loan);
+                                            }
+                                        });
+                                        
+                                        console.log('Found', uniqueLoans.length, 'unique loans');
+                                        
+                                        uniqueLoans.forEach(loan => {
+                                            const option = document.createElement('option');
+                                            option.value = loan.id;
+                                            option.setAttribute('data-loan-no', loan.loan_no || '');
+                                            option.setAttribute('data-loan-date', loan.loan_date || '');
+                                            const date = loan.loan_date ? new Date(loan.loan_date).toLocaleDateString('en-GB') : '';
+                                            const principal = loan.principal_amount ? `₹${parseFloat(loan.principal_amount).toLocaleString('en-IN')}` : '';
+                                            option.textContent = `${loan.loan_no} (${date}) - ${loan.status || 'active'} ${principal ? '- ' + principal : ''}`;
+                                            loanSelect.appendChild(option);
+                                        });
+                                        console.log('✓ Loaded', uniqueLoans.length, 'loans into dropdown');
+                                    } else {
+                                        console.error('Invalid loans response format:', data);
+                                        alert('No loans found for this customer');
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error loading loans:', error);
+                                    alert('Error loading loans: ' + error.message);
+                                });
+                        });
+                        console.log('✓ Customer dropdown event listener attached');
+                    }
+                } else {
+                    console.error('Invalid customers response format:', data);
+                    alert('Error: Invalid response from server');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading customers:', error);
+                alert('Error loading customers: ' + error.message);
+            });
+        
+        return true;
+    }
+    
+    // Try to initialize with retries
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    function tryInitialize() {
+        attempts++;
+        const customerSelect = document.getElementById('pdfCustomer');
+        const loanSelect = document.getElementById('pdfLoan');
+        
+        console.log('Init attempt', attempts, '- Customer select:', !!customerSelect, 'Loan select:', !!loanSelect);
+        
+        if (initializeReportsDropdowns()) {
+            console.log('✓ Reports page initialized successfully');
+        } else if (attempts < maxAttempts) {
+            setTimeout(tryInitialize, 150);
+        } else {
+            console.error('✗ Failed to initialize reports page after', maxAttempts, 'attempts');
+            // Last resort: try one more time after 2 seconds
+            setTimeout(() => {
+                console.log('Final attempt to initialize reports page...');
+                initializeReportsDropdowns();
+            }, 2000);
+        }
+    }
+    
+    // Use MutationObserver to watch for elements being added
+    const observer = new MutationObserver(function(mutations) {
+        const customerSelect = document.getElementById('pdfCustomer');
+        const loanSelect = document.getElementById('pdfLoan');
+        if (customerSelect && loanSelect && !initialized) {
+            console.log('Elements detected by MutationObserver, initializing...');
+            initializeReportsDropdowns();
+        }
+    });
+    
+    // Start observing
+    const contentArea = document.getElementById('contentArea');
+    if (contentArea) {
+        observer.observe(contentArea, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    // Start initialization immediately and with retries
+    tryInitialize();
 }
 
 // Initialize products page

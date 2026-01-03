@@ -1,5 +1,7 @@
 <?php
-header('Content-Type: application/json');
+// Include API helper for consistent error handling
+require_once __DIR__ . '/api-helper.php';
+
 // Define the base path
 $basePath = dirname(__DIR__);
 require_once $basePath . '/config/database.php';
@@ -496,6 +498,10 @@ try {
     }
     
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    returnJsonError('Database error: ' . $e->getMessage(), 500);
+} catch (Exception $e) {
+    returnJsonError('Error: ' . $e->getMessage(), 500);
+} catch (Error $e) {
+    returnJsonError('Fatal error: ' . $e->getMessage(), 500);
 }
 ?> 

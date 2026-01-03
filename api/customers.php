@@ -1,5 +1,25 @@
 <?php
+// Start output buffering and set JSON header FIRST
+if (!ob_get_level()) {
+    ob_start();
+}
 header('Content-Type: application/json');
+ini_set('display_errors', 0);
+
+// Include API helper for consistent error handling (if available)
+$apiHelperPath = __DIR__ . '/api-helper.php';
+if (file_exists($apiHelperPath)) {
+    require_once $apiHelperPath;
+} else {
+    // Fallback error handler if api-helper.php doesn't exist
+    function returnJsonError($message, $code = 500) {
+        http_response_code($code);
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => $message]);
+        exit();
+    }
+}
+
 // Define the base path
 $basePath = dirname(__DIR__);
 require_once $basePath . '/config/database.php';
@@ -408,6 +428,31 @@ try {
     }
     
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    if (function_exists('returnJsonError')) {
+        returnJsonError('Database error: ' . $e->getMessage(), 500);
+    } else {
+        ob_clean();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+        exit();
+    }
+} catch (Exception $e) {
+    if (function_exists('returnJsonError')) {
+        returnJsonError('Error: ' . $e->getMessage(), 500);
+    } else {
+        ob_clean();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+        exit();
+    }
+} catch (Error $e) {
+    if (function_exists('returnJsonError')) {
+        returnJsonError('Fatal error: ' . $e->getMessage(), 500);
+    } else {
+        ob_clean();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Fatal error: ' . $e->getMessage()]);
+        exit();
+    }
 }
 ?> 

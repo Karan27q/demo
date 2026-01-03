@@ -495,7 +495,7 @@ try {
                     </div>
                     <div class="form-group">
                         <label for="loanNo">Loan No *</label>
-                        <input type="text" id="loanNo" name="loan_no" required placeholder="Loan No" autocomplete="off" readonly style="background-color: #f5f5f5; cursor: not-allowed;">
+                        <input type="text" id="loanNo" name="loan_no" required placeholder="Enter Loan No" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label for="loanDate">Date *</label>
@@ -847,81 +847,13 @@ window.navigateToPage = function(path) {
 
 // Override showAddLoanModal to ensure this version is used
 window.showAddLoanModal = function() {
-    console.log('showAddLoanModal called from loans.php');
-    
     // Show modal first
     const modal = document.getElementById('addLoanModal');
     if (modal) {
         modal.style.display = 'block';
     }
     
-    // Function to fetch and set loan number with retry logic
-    function fetchAndSetLoanNumber(retryCount = 0) {
-        const loanNoField = document.getElementById('loanNo');
-        console.log('fetchAndSetLoanNumber attempt:', retryCount, 'Field found:', !!loanNoField);
-        
-        if (!loanNoField) {
-            // Retry up to 15 times if field not found
-            if (retryCount < 15) {
-                setTimeout(() => fetchAndSetLoanNumber(retryCount + 1), 100);
-            } else {
-                console.error('Loan number field not found after 15 attempts');
-            }
-            return;
-        }
-        
-        // Use the apiUrl function, with fallback
-        const getApiUrl = (typeof apiUrl !== 'undefined') ? apiUrl : (typeof window.apiUrl !== 'undefined') ? window.apiUrl : function(path) {
-            const p = window.location && window.location.pathname || '';
-            const underPages = p.indexOf('/pages/') !== -1;
-            return (underPages ? '../' : '') + path;
-        };
-        
-        const apiPath = getApiUrl('api/loans.php?action=get_next_number');
-        console.log('Fetching loan number from:', apiPath);
-        
-        fetch(apiPath)
-            .then(response => {
-                console.log('API response status:', response.status, response.statusText);
-                if (!response.ok) {
-                    throw new Error('Network response was not ok: ' + response.status);
-                }
-                return response.text().then(text => {
-                    console.log('API raw response:', text);
-                    try {
-                        return JSON.parse(text);
-                    } catch (e) {
-                        console.error('JSON parse error:', e, 'Response text:', text);
-                        throw new Error('Invalid JSON response');
-                    }
-                });
-            })
-            .then(data => {
-                console.log('API response data:', data);
-                if (data.success && data.loan_no !== undefined && data.loan_no !== null) {
-                    const loanNo = data.loan_no.toString();
-                    loanNoField.value = loanNo;
-                    console.log('Loan number successfully set to:', loanNo);
-                    // Force a re-render by triggering input event
-                    loanNoField.dispatchEvent(new Event('input', { bubbles: true }));
-                } else {
-                    console.error('Invalid response from API:', data);
-                    // Set default to 1 if no valid response
-                    loanNoField.value = '1';
-                    console.log('Set default loan number to: 1');
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching next loan number:', error);
-                // Set default to 1 if fetch fails
-                if (loanNoField) {
-                    loanNoField.value = '1';
-                    console.log('Set default loan number to: 1 (due to error)');
-                }
-            });
-    }
-    
-    // Wait a bit longer to ensure modal is fully rendered and visible
+    // Wait a bit to ensure modal is fully rendered
     setTimeout(() => {
         // Reset form completely to clear any cached data
         const form = document.getElementById('addLoanForm');
@@ -933,6 +865,12 @@ window.showAddLoanModal = function() {
             const loanDateField = document.getElementById('loanDate');
             if (loanDateField) {
                 loanDateField.value = new Date().toISOString().split('T')[0];
+            }
+            
+            // Clear loan number field (user will type manually)
+            const loanNoField = document.getElementById('loanNo');
+            if (loanNoField) {
+                loanNoField.value = '';
             }
             
             // Clear customer fields
@@ -961,9 +899,6 @@ window.showAddLoanModal = function() {
             if (calcBox) {
                 calcBox.style.display = 'none';
             }
-            
-            // Fetch and set loan number after form reset
-            fetchAndSetLoanNumber();
         } else {
             console.error('addLoanForm not found');
         }

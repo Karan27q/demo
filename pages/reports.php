@@ -343,71 +343,216 @@ try {
 </form>
 
 <script>
-// Initialize reports page
-// Note: initReportsPage is defined in dashboard.js but called before this script is evaluated.
-// So we execute our logic directly here, which runs via eval() in dashboard.js
-loadPdfCustomers();
-
-// Attach event listener
-const pdfCustomerSelect = document.getElementById('pdfCustomer');
-if (pdfCustomerSelect && !pdfCustomerSelect.dataset.listenerAttached) {
-    pdfCustomerSelect.dataset.listenerAttached = 'true';
-    pdfCustomerSelect.addEventListener('change', function() {
-        const customerId = this.value;
-        const loanSelect = document.getElementById('pdfLoan');
-        
-        if (!customerId || !loanSelect) return;
-        
-        loanSelect.innerHTML = '<option value="">Select Loan</option>';
-        
-        if (customerId) {
-            fetch(apiUrl(`api/loans.php?action=by_customer&customer_id=${customerId}`))
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success && Array.isArray(data.loans)) {
-                        // Show ALL loans (no deduplication - each loan has unique id)
-                        // Display format: Loan No (Date) - Status - Principal Amount
-                        data.loans.forEach(loan => {
-                            const option = document.createElement('option');
-                            option.value = loan.id; // Use loan ID (unique)
-                            option.setAttribute('data-loan-id', loan.id);
-                            option.setAttribute('data-loan-no', loan.loan_no || '');
-                            option.setAttribute('data-loan-date', loan.loan_date || '');
-                            const date = loan.loan_date ? new Date(loan.loan_date).toLocaleDateString('en-GB') : '';
-                            const principal = loan.principal_amount ? `₹${parseFloat(loan.principal_amount).toLocaleString('en-IN')}` : '';
-                            option.textContent = `${loan.loan_no} (${date}) - ${loan.status || 'active'} ${principal ? '- ' + principal : ''}`;
-                            loanSelect.appendChild(option);
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading loans:', error);
-                });
-        }
-    });
+// Ensure apiUrl function is available
+if (typeof apiUrl === 'undefined') {
+    function apiUrl(path) {
+        const p = window.location && window.location.pathname || '';
+        const underPages = p.indexOf('/pages/') !== -1;
+        return (underPages ? '../' : '') + path;
+    }
 }
 
+// Initialize reports page
 function loadPdfCustomers() {
-    fetch(apiUrl('api/customers.php'))
-        .then(response => response.json())
+    const apiPath = apiUrl('api/customers.php');
+    console.log('Loading PDF customers from:', apiPath);
+    
+    fetch(apiPath)
+        .then(response => {
+            console.log('Customers API response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                return response.text().then(text => {
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                });
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Customers API data:', data);
             if (data.success && data.customers) {
-                const select = document.getElementById('pdfCustomer');
-                if (select) {
-                    select.innerHTML = '<option value="">Select Customer</option>';
-                    data.customers.forEach(customer => {
-                        const option = document.createElement('option');
-                        option.value = customer.id;
-                        option.textContent = `${customer.customer_no} - ${customer.name}`;
-                        select.appendChild(option);
-                    });
+                // Wait for element with retry mechanism
+                function populateCustomerDropdown(retries = 20) {
+                    const select = document.getElementById('pdfCustomer');
+                    if (select) {
+                        select.innerHTML = '<option value="">Select Customer</option>';
+                        data.customers.forEach(customer => {
+                            const option = document.createElement('option');
+                            option.value = customer.id;
+                            const customerNo = customer.customer_no || '';
+                            option.textContent = customerNo ? `${customerNo} - ${customer.name}` : customer.name;
+                            select.appendChild(option);
+                        });
+                        console.log('Loaded', data.customers.length, 'customers into dropdown');
+                    } else if (retries > 0) {
+                        setTimeout(() => populateCustomerDropdown(retries - 1), 100);
+                    } else {
+                        console.error('pdfCustomer select element not found after retries');
+                    }
                 }
+                populateCustomerDropdown();
+            } else {
+                console.error('Invalid response format:', data);
             }
         })
         .catch(error => {
             console.error('Error loading customers:', error);
         });
 }
+
+// Function to initialize reports page - waits for elements to exist
+function initReportsPageScript() {
+    // Wait for elements to exist (retry mechanism for dynamically loaded content)
+    function waitForElement(selector, callback, retries = 20) {
+        const element = document.getElementById(selector);
+        if (element) {
+            callback(element);
+        } else if (retries > 0) {
+            setTimeout(() => waitForElement(selector, callback, retries - 1), 100);
+        } else {
+            console.error('Element not found after retries:', selector);
+        }
+    }
+    
+    // Attach event listener for customer dropdown change
+    waitForElement('pdfCustomer', function(pdfCustomerSelect) {
+        if (!pdfCustomerSelect.dataset.listenerAttached) {
+            pdfCustomerSelect.dataset.listenerAttached = 'true';
+            pdfCustomerSelect.addEventListener('change', function() {
+                const customerId = this.value;
+                const loanSelect = document.getElementById('pdfLoan');
+                
+                if (!customerId || !loanSelect) {
+                    console.log('Customer ID or loan select not found');
+                    return;
+                }
+                
+                loanSelect.innerHTML = '<option value="">Select Loan</option>';
+                
+                if (customerId) {
+                    const apiPath = apiUrl(`api/loans.php?action=by_customer&customer_id=${customerId}`);
+                    console.log('Loading loans for customer', customerId, 'from:', apiPath);
+                    
+                    fetch(apiPath)
+                        .then(response => {
+                            console.log('Loans API response status:', response.status);
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const contentType = response.headers.get('content-type');
+                            if (!contentType || !contentType.includes('application/json')) {
+                                return response.text().then(text => {
+                                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                                });
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Loans API data:', data);
+                            if (data.success && Array.isArray(data.loans)) {
+                                // Deduplicate by loan_no to ensure each loan number appears only once
+                                const seenLoanNos = new Set();
+                                const uniqueLoans = [];
+                                
+                                data.loans.forEach(loan => {
+                                    const loanNo = String(loan.loan_no || '').trim();
+                                    if (loanNo && !seenLoanNos.has(loanNo)) {
+                                        seenLoanNos.add(loanNo);
+                                        uniqueLoans.push(loan);
+                                    }
+                                });
+                                
+                                console.log('Found', uniqueLoans.length, 'unique loans');
+                                
+                                // Populate loan dropdown
+                                uniqueLoans.forEach(loan => {
+                                    const option = document.createElement('option');
+                                    option.value = loan.id;
+                                    option.setAttribute('data-loan-id', loan.id);
+                                    option.setAttribute('data-loan-no', loan.loan_no || '');
+                                    option.setAttribute('data-loan-date', loan.loan_date || '');
+                                    const date = loan.loan_date ? new Date(loan.loan_date).toLocaleDateString('en-GB') : '';
+                                    const principal = loan.principal_amount ? `₹${parseFloat(loan.principal_amount).toLocaleString('en-IN')}` : '';
+                                    option.textContent = `${loan.loan_no} (${date}) - ${loan.status || 'active'} ${principal ? '- ' + principal : ''}`;
+                                    loanSelect.appendChild(option);
+                                });
+                                
+                                console.log('Loan dropdown populated with', uniqueLoans.length, 'loans');
+                            } else {
+                                console.error('Invalid loans response format:', data);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading loans:', error);
+                        });
+                }
+            });
+            console.log('Customer dropdown event listener attached');
+        }
+    });
+    
+    // Load customers after element exists
+    waitForElement('pdfCustomer', function() {
+        loadPdfCustomers();
+    });
+}
+
+// Make functions globally available
+window.loadPdfCustomers = loadPdfCustomers;
+window.initReportsPageScript = initReportsPageScript;
+
+// Initialize with multiple attempts to handle dynamic loading
+(function() {
+    let attempts = 0;
+    const maxAttempts = 15;
+    
+    function tryInit() {
+        attempts++;
+        const customerSelect = document.getElementById('pdfCustomer');
+        const loanSelect = document.getElementById('pdfLoan');
+        
+        console.log('Reports init attempt', attempts, '- Customer select:', !!customerSelect, 'Loan select:', !!loanSelect);
+        
+        if (customerSelect && loanSelect) {
+            console.log('Reports page elements found, initializing...');
+            try {
+                initReportsPageScript();
+                loadPdfCustomers();
+                console.log('Reports page initialization complete');
+            } catch (error) {
+                console.error('Error during reports page initialization:', error);
+            }
+        } else if (attempts < maxAttempts) {
+            console.log('Waiting for reports page elements, retrying in 200ms...');
+            setTimeout(tryInit, 200);
+        } else {
+            console.error('Reports page elements not found after', maxAttempts, 'attempts');
+            console.log('Available elements:', {
+                pdfCustomer: !!document.getElementById('pdfCustomer'),
+                pdfLoan: !!document.getElementById('pdfLoan'),
+                contentArea: !!document.getElementById('contentArea')
+            });
+            // Try one more time after a longer delay
+            setTimeout(() => {
+                console.log('Final attempt to initialize reports page...');
+                const customerSelect = document.getElementById('pdfCustomer');
+                const loanSelect = document.getElementById('pdfLoan');
+                if (customerSelect && loanSelect) {
+                    initReportsPageScript();
+                    loadPdfCustomers();
+                } else {
+                    console.error('Elements still not found in final attempt');
+                }
+            }, 1000);
+        }
+    }
+    
+    // Start initialization after a short delay to ensure DOM is ready
+    setTimeout(tryInit, 100);
+})();
 
 function viewLoanPdf() {
     const loanSelect = document.getElementById('pdfLoan');

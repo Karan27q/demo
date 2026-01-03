@@ -29,12 +29,9 @@ RewriteEngine On
 # RewriteCond %{HTTPS} off
 # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Prevent direct access to PHP files in api directory
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteCond %{REQUEST_METHOD} !POST
-RewriteCond %{REQUEST_METHOD} !PUT
-RewriteCond %{REQUEST_METHOD} !DELETE
-RewriteRule ^api/.*$ - [F]
+# Allow API access for all HTTP methods (GET, POST, PUT, DELETE)
+# API files handle their own security and authentication
+# Note: If you need to restrict API access, do it in the PHP files themselves
 
 # Custom error pages
 ErrorDocument 404 /index.php
