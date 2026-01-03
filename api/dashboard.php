@@ -1,12 +1,30 @@
 <?php
-header('Content-Type: application/json');
+// Include API helper for consistent error handling
+require_once __DIR__ . '/api-helper.php';
+
 // Define the base path
 $basePath = dirname(__DIR__);
-require_once $basePath . '/config/database.php';
-require_once $basePath . '/config/interest_calculator.php';
 
 try {
+    // Check if required files exist
+    $dbFile = $basePath . '/config/database.php';
+    $calcFile = $basePath . '/config/interest_calculator.php';
+    
+    if (!file_exists($dbFile)) {
+        returnJsonError('Database configuration file not found', 500);
+    }
+    if (!file_exists($calcFile)) {
+        returnJsonError('Interest calculator file not found', 500);
+    }
+    
+    require_once $dbFile;
+    require_once $calcFile;
+    
     $pdo = getDBConnection();
+    
+    if (!$pdo) {
+        returnJsonError('Failed to connect to database', 500);
+    }
     
     // Get comprehensive dashboard statistics
     $stats = [];
@@ -127,13 +145,17 @@ try {
     
     // If only trends are requested, return only that data
     if (isset($_GET['trends_only']) && $_GET['trends_only'] == '1') {
-        echo json_encode(['success' => true, 'data' => ['loan_trends' => $stats['loan_trends']]]);
+        returnJsonSuccess(['loan_trends' => $stats['loan_trends']]);
     } else {
-        echo json_encode(['success' => true, 'data' => $stats]);
+        returnJsonSuccess($stats);
     }
     
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    returnJsonError('Database error: ' . $e->getMessage(), 500);
+} catch (Exception $e) {
+    returnJsonError('Error: ' . $e->getMessage(), 500);
+} catch (Error $e) {
+    returnJsonError('Fatal error: ' . $e->getMessage(), 500);
 }
 ?>
 

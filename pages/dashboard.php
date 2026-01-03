@@ -357,7 +357,20 @@ window.initDashboard = initDashboard;
 function loadLoanTrendsChart() {
     // Only fetch loan trends data, not all dashboard stats (to avoid duplicate fetching)
     fetch(apiUrl('api/dashboard.php?trends_only=1'))
-        .then(response => response.json())
+        .then(response => {
+            // Check if response is OK
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            // Check content type
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                return response.text().then(text => {
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                });
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success && data.data && data.data.loan_trends) {
                 const trends = data.data.loan_trends;
@@ -419,10 +432,13 @@ function loadLoanTrendsChart() {
                         }
                     });
                 }
+            } else {
+                console.warn('Loan trends data not available:', data);
             }
         })
         .catch(error => {
             console.error('Error loading loan trends:', error);
+            // Don't show alert for chart loading errors - just log them
         });
 }
 
